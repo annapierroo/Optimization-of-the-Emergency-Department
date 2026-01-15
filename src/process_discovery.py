@@ -29,15 +29,17 @@ def discover_process():
     dfg, start_activities, end_activities = pm4py.discover_dfg(df)
 
     # Filtering for more frequent activities 
-    activities_count = df['concept:name'].value_counts().to_dict()
+    activities_count = df['concept:name'].value_counts().to_dict() 
     dfg_filtered, start_f, end_f, activities_f = dfg_filtering.filter_dfg_on_activities_percentage(
-    dfg, start_activities, end_activities, activities_count, percentage=0.5)
+    dfg, start_activities, end_activities, activities_count, percentage=0.6)
 
-    
+    # Filtering for infrequent paths
+    dfg_edges_filtered, start_edges, end_edges,activities_edges = dfg_filtering.filter_dfg_on_paths_percentage(
+    dfg_filtered, start_f, end_f, activities_count, percentage= 0.3, keep_all_activities= False)
 
     #Saving Visualization
     os.makedirs(os.path.dirname(OUTPUT_IMG_PATH), exist_ok=True)
-    pm4py.save_vis_dfg(dfg_filtered, start_f, end_f, OUTPUT_IMG_PATH, variant = "frequency")
+    pm4py.save_vis_dfg(dfg_edges_filtered, start_edges, end_edges, OUTPUT_IMG_PATH, variant = "frequency")
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ def ingest_and_clean():
     df.sort_values(by=['PATIENT', 'START'], inplace=True)
 
 
-    n_patients = 200
+    n_patients = 300
     top_patients = df['PATIENT'].unique()[:n_patients]
     df = df[df['PATIENT'].isin(top_patients)].copy()
 
