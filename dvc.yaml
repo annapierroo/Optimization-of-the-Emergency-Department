@@ -1,0 +1,16 @@
+stages:
+  ingest:
+    cmd: python3 src/ingest_data.py
+    deps:
+      - data/raw/EventLog.csv
+      - src/ingest_data.py
+    outs:
+      - data/processed/patient_journey_log.csv
+
+  discovery:
+    cmd: python3 src/process_discovery.py
+    deps:
+      - data/processed/patient_journey_log.csv
+      - src/process_discovery.py
+    outs:
+      - reports/figures/patient_journey_dfg.png

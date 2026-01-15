@@ -1,0 +1,18 @@
+schema: '2.0'
+stages:
+  ingest:
+    cmd: python3 src/ingest_data.py
+    deps:
+    - path: data/raw/EventLog.csv
+      hash: md5
+      md5: 88e94d07955582ed9e0dd1e18abf81d5
+      size: 8712629
+    - path: src/ingest_data.py
+      hash: md5
+      md5: 35ccb9266852740986855ed85ca39485
+      size: 2352
+    outs:
+    - path: data/processed/patient_journey_log.csv
+      hash: md5
+      md5: f1b346e2ae357e0945710edc2ec4ff75
+      size: 10148378
