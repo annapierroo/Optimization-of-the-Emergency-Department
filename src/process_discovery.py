@@ -1,11 +1,15 @@
+import os
+import re
+
 import pandas as pd
 import pm4py
-import os
+from graphviz import Source
+from pm4py.visualization.dfg import visualizer as dfg_visualizer
 
 PROCESSED_DATA_PATH = "data/processed/patient_journey_log.csv"
 OUTPUT_DIR = "reports/figures"
 OUTPUT_IMG_PATH = "reports/figures/patient_journey_dfg.png"
-
+OUTPUT_IMG_PATH_TIME = "reports/figures/patient_journey_dfg_time.png"
 
 def discover_process():
     df = pd.read_csv(PROCESSED_DATA_PATH)
@@ -75,6 +79,52 @@ def discover_process():
         variant="frequency",
     )
 
+    df["start:timestamp"] = pd.to_datetime(df["start:timestamp"], utc=True)
+    df["end:timestamp"] = pd.to_datetime(df["end:timestamp"], utc=True)
+
+    perf_dfg, sa, ea = pm4py.discover_performance_dfg(
+        df,
+        case_id_key="case:concept:name",
+        activity_key="concept:name",
+        timestamp_key="start:timestamp",
+        perf_aggregation_key="mean",
+        business_hours=False,
+    )
+
+    os.makedirs(os.path.dirname(OUTPUT_IMG_PATH_TIME), exist_ok=True)
+
+    gviz = dfg_visualizer.apply(
+        perf_dfg,
+        variant=dfg_visualizer.Variants.PERFORMANCE,
+        parameters={"start_activities": sa, "end_activities": ea},
+    )
+
+    def _edge_to_minutes(m: re.Match) -> str:
+        attr = m.group("attr")   
+        val = float(m.group("val"))
+        unit = m.group("unit").lower()
+
+        if unit == "s":
+            minutes = val / 60
+        elif unit == "m":
+            minutes = val
+        elif unit == "h":
+            minutes = val * 60
+        elif unit == "d":
+            minutes = val * 1440
+        else:
+            return m.group(0)
+
+        return f'{attr}="{minutes} min"'
+
+    dot = re.sub(
+        r'(?P<attr>(?:x?label|headlabel|taillabel))\s*=\s*(?P<q>"?)(?P<val>\d+(?:\.\d+)?)(?:\s*)(?P<unit>[smhd])(?P=q)',
+        _edge_to_minutes,
+        gviz.source,
+        flags=re.IGNORECASE,
+    )
+ 
+    Source(dot).render(filename=os.path.splitext(OUTPUT_IMG_PATH_TIME)[0], format="png", cleanup=True)
 
 if __name__ == "__main__":
     discover_process()

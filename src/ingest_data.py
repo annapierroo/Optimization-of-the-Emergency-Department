@@ -21,7 +21,7 @@ def ingest_and_clean():
 
     df.dropna(subset=['ENCOUNTER', 'START', 'STOP', 'DESCRIPTION'], inplace=True)
 
-    n_patients = 76  # adjust as needed
+    n_patients = 100 # adjust as needed
     encounter_counts = df['ENCOUNTER'].unique()[:n_patients]
     df = df[df['ENCOUNTER'].isin(encounter_counts)].copy()
 
@@ -31,11 +31,13 @@ def ingest_and_clean():
     rename_mapping = {
         'ENCOUNTER': 'case:concept:name',
         'DESCRIPTION': 'concept:name',
-        'STOP': 'time:timestamp'
+        'START': 'start:timestamp',
+        'STOP': 'end:timestamp'
     }
     df.rename(columns=rename_mapping, inplace=True)
+    df['time:timestamp'] = df['start:timestamp']
 
-    df.dropna(subset=['case:concept:name', 'time:timestamp', 'concept:name'], inplace=True)
+    df.dropna(subset=['case:concept:name', 'concept:name', 'start:timestamp', 'end:timestamp', 'time:timestamp'], inplace=True)
 
     os.makedirs(os.path.dirname(PROCESSED_DATA_PATH), exist_ok=True)
     df.to_csv(PROCESSED_DATA_PATH, index=False)
