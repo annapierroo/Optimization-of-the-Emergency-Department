@@ -9,7 +9,7 @@ def ingest_and_clean():
 
     try:
         cols_to_use = ['ENCOUNTER', 'START', 'STOP', 'DESCRIPTION']
-        df = pd.read_csv(RAW_DATA_PATH, sep=';', usecols=cols_to_use)
+        df = pd.read_csv(RAW_DATA_PATH, sep=',', usecols=cols_to_use)
     except FileNotFoundError:
         print(f"ERROR: File {RAW_DATA_PATH} not found.")
         sys.exit(1)
@@ -38,6 +38,7 @@ def ingest_and_clean():
     df['time:timestamp'] = df['start:timestamp']
 
     df.dropna(subset=['case:concept:name', 'concept:name', 'start:timestamp', 'end:timestamp', 'time:timestamp'], inplace=True)
+    df = df.sort_values(by=["case:concept:name", "start:timestamp"])
 
     os.makedirs(os.path.dirname(PROCESSED_DATA_PATH), exist_ok=True)
     df.to_csv(PROCESSED_DATA_PATH, index=False)

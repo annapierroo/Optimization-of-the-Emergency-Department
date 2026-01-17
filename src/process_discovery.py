@@ -1,6 +1,6 @@
 import os
 import re
-
+import matplotlib.pyplot as plt
 import pandas as pd
 import pm4py
 from graphviz import Source
@@ -8,12 +8,62 @@ from pm4py.visualization.dfg import visualizer as dfg_visualizer
 
 PROCESSED_DATA_PATH = "data/processed/patient_journey_log.csv"
 OUTPUT_DIR = "reports/figures"
+BOXPLOT_PATH = "reports/figures/waiting_time_boxplot.png"
 OUTPUT_IMG_PATH = "reports/figures/patient_journey_dfg.png"
 OUTPUT_IMG_PATH_TIME = "reports/figures/patient_journey_dfg_time.png"
 
 def discover_process():
     df = pd.read_csv(PROCESSED_DATA_PATH)
+
     df['time:timestamp'] = pd.to_datetime(df['time:timestamp'], utc=True)
+    df["start:timestamp"] = pd.to_datetime(df["start:timestamp"], utc=True)
+    df["end:timestamp"] = pd.to_datetime(df["end:timestamp"], utc=True)
+
+    # Manually computes the waiting time to generate a boxplot to look for outliers
+    df["waiting_time"] = (
+    df.groupby("case:concept:name")["start:timestamp"]
+      .shift(-1) - df["end:timestamp"])
+    df["next_activity"] = df.groupby("case:concept:name")["concept:name"].shift(-1)
+    df["waiting_time"] = df["waiting_time"].dt.total_seconds() / 3600.0 #in hours
+    df_plot = df.dropna(subset=["waiting_time"])
+    plt.figure()
+    plt.boxplot(df_plot["waiting_time"], vert=True, showfliers=True)
+    plt.title("Boxplot of Waiting Times (in hours)")
+    plt.ylabel("Waiting Time")
+    plt.savefig(BOXPLOT_PATH)
+    plt.close()    
+
+    # Analysis of outliers
+    outliers = df[df["waiting_time"] > df["waiting_time"].quantile(0.95)]
+    outliers_infos = outliers[['case:concept:name','concept:name','next_activity','waiting_time']]
+
+   # Activities that are typically isolated/the first
+    first_activities = df.sort_values(['case:concept:name', 'start:timestamp']) \
+                     .groupby('case:concept:name').first()
+
+    first_counts = first_activities['concept:name'].value_counts()
+    total_counts = df.groupby('concept:name')['case:concept:name'].nunique()
+    isolated_acts = (df.sort_values(['case:concept:name', 'start:timestamp'])
+                   .groupby('case:concept:name').first()['concept:name']
+                   .value_counts() / df.groupby('concept:name')['case:concept:name'].nunique()
+                    ).loc[lambda x: x > 0.95].index.tolist()
+
+    
+
+    mean_before_next = df.groupby("next_activity")["waiting_time"].mean().reset_index()
+    mean_after_current = df.groupby("concept:name")["waiting_time"].mean().reset_index()
+    outliers = outliers.merge(mean_before_next, on = "next_activity", how = "left", suffixes=('', '_mean_before_next'))
+    outliers = outliers.merge(mean_after_current, on="concept:name", how="left", suffixes=('', '_mean_after_current'))
+    
+
+    real_outliers = outliers[ 
+        ((outliers["next_activity"].isin(isolated_acts)) &
+        ((outliers["waiting_time"] > 2 * outliers["waiting_time_mean_before_next"]) |
+        (outliers["waiting_time"] > 2 * outliers["waiting_time_mean_after_current"]))) |
+        ((outliers["waiting_time"] > 2 * outliers["waiting_time_mean_before_next"]) &
+        (outliers["waiting_time"] > 2 * outliers["waiting_time_mean_after_current"]))]
+
+    df = df[~df.index.isin(real_outliers.index)]
 
     # Grouping similar activities
     s = df['concept:name'].astype(str).str.strip().str.lower()
@@ -79,9 +129,6 @@ def discover_process():
         variant="frequency",
     )
 
-    df["start:timestamp"] = pd.to_datetime(df["start:timestamp"], utc=True)
-    df["end:timestamp"] = pd.to_datetime(df["end:timestamp"], utc=True)
-
     perf_dfg, sa, ea = pm4py.discover_performance_dfg(
         df,
         case_id_key="case:concept:name",
@@ -124,7 +171,7 @@ def discover_process():
         flags=re.IGNORECASE,
     )
  
-    Source(dot).render(filename=os.path.splitext(OUTPUT_IMG_PATH_TIME)[0], format="png", cleanup=True)
+    Source(dot).render(filename=os.path.splitext(OUTPUT_IMG_PATH_TIME)[0], format="png", cleanup=True) 
 
 if __name__ == "__main__":
     discover_process()
