@@ -2,6 +2,7 @@ import os
 import re
 import matplotlib.pyplot as plt
 import pandas as pd
+from scipy import stats 
 import pm4py
 from graphviz import Source
 from pm4py.visualization.dfg import visualizer as dfg_visualizer
@@ -20,12 +21,18 @@ def beautify_boxplot(data, labels, title, ylabel, output_path, colors=None):
     if colors is None:
        colors = ["#A0CDF5"] * len(data)
 
-    bp = plt.boxplot(data, labels=labels, patch_artist=True, whiskerprops=dict(linewidth=1.5), medianprops=dict(color="black", linewidth=2),
+    bp = plt.boxplot(data, 
+                     labels=labels,
+                    patch_artist=True,
+                    showmeans=True,   meanprops=dict( marker='D',markeredgecolor='black',  markerfacecolor='red',  markersize=5),
+                    whiskerprops=dict(linewidth=1.5), 
+                    medianprops=dict(color="blue", linewidth=2),
         flierprops=dict(
             marker='o',
             markersize=4,
             markeredgewidth=1
         ))
+    plt.grid(axis="y", linestyle="--", color='gray', alpha=0.5)
     for box , color in zip(bp["boxes"], colors):
         box.set(facecolor=color, edgecolor="black", linewidth=1.5)
 
@@ -192,14 +199,25 @@ def discover_process():
  
     Source(dot).render(filename=os.path.splitext(OUTPUT_IMG_PATH_TIME)[0], format="png", cleanup=True) 
 
-    # Looking for difference in waiting times between day and night
+    # Looking for difference in waiting times between day and night(boxplot)
     df["hour"] = df["end:timestamp"].dt.hour
     df["time_of_day"] = df["hour"].apply(lambda x: "day" if 6 <= x < 18 else "night")
     df = df.dropna(subset=["waiting_time"])
     beautify_boxplot( [df[df["time_of_day"] == "day"]["waiting_time"],
-     df[df["time_of_day"] == "night"]["waiting_time"]], ["Day", "Night"], "Waiting Time by Time of Day", "Waiting Time (hours)", DAY_NIGHT_BOXPLOT, colors=["#A0CDF5", "#9FE984"])
+    df[df["time_of_day"] == "night"]["waiting_time"]], ["Day", "Night"], "Waiting Time by Time of Day", "Waiting Time (hours)", DAY_NIGHT_BOXPLOT, colors=["#A0CDF5", "#9FE984"])
 
-
+    # Looking for difference in waiting times between day and night(mean/mode/median)
+    groups = df.groupby("time_of_day")["waiting_time"]
+    mean_waiting = groups.mean()
+    median_waiting = groups.median()
+    mode_waiting = groups.apply(lambda x: stats.mode(x, keepdims=True).mode[0])    
+    summary = pd.DataFrame({
+        "Mean Waiting Time": mean_waiting,
+        "Median Waiting Time": median_waiting,
+        "Mode Waiting Time": mode_waiting
+    })
+    summary = summary.reindex(["day", "night"])
+    print(summary)
 
 if __name__ == "__main__":
     discover_process() 
