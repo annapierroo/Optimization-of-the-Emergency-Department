@@ -2,6 +2,7 @@ import os
 import re
 import matplotlib.pyplot as plt
 import pandas as pd
+import holidays
 from scipy import stats 
 import pm4py
 from graphviz import Source
@@ -13,11 +14,12 @@ BOXPLOT_PATH = "reports/figures/waiting_time_boxplot.png"
 OUTPUT_IMG_PATH = "reports/figures/patient_journey_dfg.png"
 OUTPUT_IMG_PATH_TIME = "reports/figures/patient_journey_dfg_time.png"
 DAY_NIGHT_BOXPLOT = "reports/figures/waiting_time_day_night_boxplot.png"
+HOLIDAY_BOXPLOT = "reports/figures/waiting_time_holiday_boxplot.png"
 
 
 # function for uniform boxplots
 def beautify_boxplot(data, labels, title, ylabel, output_path, colors=None):
-    plt.figure()
+    plt.figure(figsize=(8,5))
     if colors is None:
        colors = ["#A0CDF5"] * len(data)
 
@@ -32,10 +34,12 @@ def beautify_boxplot(data, labels, title, ylabel, output_path, colors=None):
             markersize=4,
             markeredgewidth=1
         ))
+    
+    plt.ylim(0, 200)  
     plt.grid(axis="y", linestyle="--", color='gray', alpha=0.5)
     for box , color in zip(bp["boxes"], colors):
         box.set(facecolor=color, edgecolor="black", linewidth=1.5)
-
+    
     plt.title(title)
     plt.ylabel(ylabel)
     plt.tight_layout()
@@ -61,7 +65,7 @@ def discover_process():
     beautify_boxplot( [df_wait["waiting_time"]], ["Waiting Time in hours"], "Waiting time boxplot", "Waiting Time distribution", BOXPLOT_PATH)   
 
     # Analysis of outliers
-    outliers = df[df["waiting_time"] > df["waiting_time"].quantile(0.95)]
+    outliers = df[df["waiting_time"] > df["waiting_time"].quantile(0.9)]
     outliers_infos = outliers[['case:concept:name','concept:name','next_activity','waiting_time']]
 
    # Activities that are typically isolated/the first
@@ -73,7 +77,7 @@ def discover_process():
     isolated_acts = (df.sort_values(['case:concept:name', 'start:timestamp'])
                    .groupby('case:concept:name').first()['concept:name']
                    .value_counts() / df.groupby('concept:name')['case:concept:name'].nunique()
-                    ).loc[lambda x: x > 0.95].index.tolist()
+                    ).loc[lambda x: x > 0.9].index.tolist()
 
     
 
@@ -218,6 +222,33 @@ def discover_process():
     })
     summary = summary.reindex(["day", "night"])
     print(summary)
+
+  # Filters for holidays and weekends(boxplot)
+    holiday = holidays.Brazil(years=df["start:timestamp"].dt.year.unique())
+    df["date"] = df["start:timestamp"].dt.date
+    df["is_weekend"] = df["start:timestamp"].dt.weekday >= 5
+    df = df.dropna(subset=["waiting_time"])
+    df["is_holiday"] = df["date"].apply(lambda x: x in holiday)
+
+    # Function that returns the type of day
+    def day_type(row):
+        if row["date"] in holiday:
+            return "holiday"
+        elif row["is_weekend"]:
+            return "weekend"
+        else:
+            return "weekday"
+    
+    df["day_type"] = df.apply(day_type, axis=1)
+    beautify_boxplot( [df[df["day_type"] == "holiday"]["waiting_time"],
+    df[df["day_type"] == "weekend"]["waiting_time"], df[df["day_type"] == "weekday"]["waiting_time"]],
+    ["Holiday", "Weekend", "Weekday"], "Waiting Time by Day Type", "Waiting Time in hours", HOLIDAY_BOXPLOT, colors=["#D387F9", "#F5D6A0", "#84BFF3"])
+
+
+
+
+
+
 
 if __name__ == "__main__":
     discover_process() 
