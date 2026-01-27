@@ -216,11 +216,11 @@ def discover_process():
     trans["is_holiday"] = trans["date"].apply(lambda d: d in ma_holidays)
     trans["is_weekend"] = trans["start:timestamp"].dt.weekday >= 5
     trans["day_type"] = trans.apply(lambda r: "holiday" if r["is_holiday"] else ("weekend" if r["is_weekend"] else "weekday"), axis=1)
-    # Day/Night based on start time of the current activity (06:00-17:59 = day)
+    # Day/Night based on start time of the current activity (6-18 = day)
     trans["hour"] = trans["start:timestamp"].dt.hour
     trans["time_of_day"] = trans["hour"].apply(lambda h: "day" if 6 <= h < 18 else "night")
 
-    # Save transitions dataset for later modeling
+    
     os.makedirs(os.path.dirname(WAITING_CSV), exist_ok=True)
     trans[[
         "case:concept:name",
@@ -263,7 +263,7 @@ def discover_process():
     print("\nWaiting time summary (minutes, waiting>0) - Day vs Night")
     print(summary_dn)
 
-    # Plots to compare waiting times by calendar groups (minutes, waiting > 0)
+    # Plots to compare waiting times
     weekend_groups = {
         "weekday": trans[~trans["is_weekend"]]["waiting_min"],
         "weekend": trans[trans["is_weekend"]]["waiting_min"],

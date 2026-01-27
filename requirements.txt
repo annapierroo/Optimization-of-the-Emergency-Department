@@ -5,3 +5,4 @@ matplotlib
 dvc        
 pyyaml     
 holidays
+streamlit

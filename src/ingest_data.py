@@ -21,7 +21,7 @@ def ingest_and_clean():
 
     df.dropna(subset=['ENCOUNTER', 'START', 'STOP', 'DESCRIPTION'], inplace=True)
 
-    n_patients = 150 # adjust as needed
+    n_patients = 50 # adjust as needed
     encounter_counts = df['ENCOUNTER'].unique()[:n_patients]
     df = df[df['ENCOUNTER'].isin(encounter_counts)].copy()
 
