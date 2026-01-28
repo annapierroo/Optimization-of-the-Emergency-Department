@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "optimization-emergency-department"
+version = "0.0.1"
+description = "Emergency department optimization utilities"
+requires-python = ">=3.12"
+dependencies = [
+  "pandas",
+  "pm4py",
+  "scikit-learn",
+  "matplotlib",
+  "dvc",
+  "pyyaml",
+]
+
+[tool.setuptools]
+packages = ["src"]
