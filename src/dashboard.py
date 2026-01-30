@@ -5,6 +5,32 @@ import plotly.express as px
 import os
 import joblib
 
+
+# Log-in configuration
+def psw_check():
+    USER = "admin"
+    PASSWORD = "ED_Opt26"
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    if st.session_state.authenticated:
+        return
+
+    st.title("Emergency Dept Dashboard - Login Required")
+    user = st.text_input("Enter Username:")
+    pwd = st.text_input("Enter Password:", type="password")
+    
+
+    if st.button("Login"):
+        if user == USER and pwd == PASSWORD:
+            st.session_state.authenticated = True
+            st.success("Successfully Logged in")
+        else:
+            st.error("Incorrect password. Try again.")
+    st.stop()
+
+
+psw_check()
 # Page Configuration
 st.set_page_config(page_title="Emergency Dept Dashboard", layout="wide")
 st.title("Emergency Department Optimization & AI Prediction")
