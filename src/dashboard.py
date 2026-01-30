@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import os
+import holidays
 import joblib
 
 
@@ -24,7 +25,6 @@ def psw_check():
     if st.button("Login"):
         if user == USER and pwd == PASSWORD:
             st.session_state.authenticated = True
-            st.success("Successfully Logged in")
         else:
             st.error("Incorrect password. Try again.")
     st.stop()
@@ -38,6 +38,8 @@ st.title("Emergency Department Optimization & AI Prediction")
 # --- 1. DATA LOADING FUNCTION ---
 @st.cache_data
 def load_data():
+    holiday = holidays.USA()
+
     try:
         # Load the CSV file using the correct separator
         df = pd.read_csv("data/raw/EventLog.csv", sep=";")
@@ -46,15 +48,15 @@ def load_data():
         df['START'] = pd.to_datetime(df['START'], utc=True, errors='coerce')
         df['STOP'] = pd.to_datetime(df['STOP'], utc=True, errors='coerce')
         df = df.dropna(subset=['START', 'STOP'])
-        df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
-        df['Waiting_Time_Mins'] = df['Waiting_Time_Mins'].clip(lower=0)
         
         # Feature Engineering
+        df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
+        df['Waiting_Time_Mins'] = df['Waiting_Time_Mins'].clip(lower=0)
         df['Arrival_Hour'] = df['START'].dt.hour
         df['Day_Name'] = df['START'].dt.strftime('%A')
         df['Year_Week'] = df['START'].dt.strftime('%Y - Week %U')
         
-        return df, True # True means "Real Data"
+        is_real_data = True
 
     except FileNotFoundError:
         # Fallback: Simulated Data
@@ -63,11 +65,25 @@ def load_data():
             "START": dates,
             "STOP": dates + pd.to_timedelta(np.random.randint(10, 120, 500), unit='m')
         })
-        df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
-        df['Arrival_Hour'] = df['START'].dt.hour
-        df['Day_Name'] = df['START'].dt.strftime('%A')
-        df['Year_Week'] = df['START'].dt.strftime('%Y - Week %U')
-        return df, False
+        is_real_data = False
+
+    df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
+    df['Waiting_Time_Mins'] = df['Waiting_Time_Mins'].clip(lower=0)
+    df['Arrival_Hour'] = df['START'].dt.hour
+    df['Day_Name'] = df['START'].dt.strftime('%A')
+    df['Year_Week'] = df['START'].dt.strftime('%Y - Week %U')
+
+
+    def holiday_day(dt):
+        if dt in holiday:
+            return "Holiday"
+        elif dt.weekday() >= 5:
+            return "Weekend"
+        else:
+            return "Weekday"
+        
+    df['Day_Type'] = df['START'].apply(holiday_day)
+    return df, is_real_data
 
 # --- 2. AI MODEL LOADING FUNCTION ---
 def load_model():
@@ -109,6 +125,13 @@ if is_real_data:
         df_filtered = df_filtered[df_filtered['Year_Week'] == selected_week]
 else:
     st.sidebar.warning("Using Simulated Data")
+
+selected_day_type = st.sidebar.selectbox(
+    "Type of day",
+    ["All", "Weekday", "Weekend", "Holiday"]
+)
+if selected_day_type != "All":
+    df_filtered = df_filtered[df_filtered['Day_Type'] == selected_day_type]
 
 # B. AI Prediction Simulator
 st.sidebar.markdown("---")
