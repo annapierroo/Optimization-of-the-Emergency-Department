@@ -2,5 +2,10 @@ pandas
 pm4py
 scikit-learn
 matplotlib
-dvc        
-pyyaml     
+dvc
+pyyaml  
+pytest
+holidays
+streamlit
+xgboost
+plotly
