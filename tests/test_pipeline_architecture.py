@@ -12,10 +12,14 @@ from src.features import (
 def _make_config(tmp_path: Path) -> PipelineConfig:
     return PipelineConfig(
         project_root=tmp_path,
+        data_path=tmp_path / "data" / "raw" / "EventLog.csv",
         raw_data_dir=tmp_path / "data" / "raw",
         processed_data_dir=tmp_path / "data" / "processed",
         feature_store_dir=tmp_path / "data" / "features",
         model_dir=tmp_path / "artifacts" / "models",
+        model_filename="xgb_model.json",
+        test_size=0.2,
+        random_state=42,
         reports_dir=tmp_path / "reports",
     )
 

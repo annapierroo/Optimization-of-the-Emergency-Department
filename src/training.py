@@ -10,25 +10,20 @@ import os
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 from dataclasses import dataclass, field  # <--- AGGIUNTO 'field'
+from pathlib import Path
 
-# Configuration Class
-@dataclass
-class PipelineConfig:
-    data_path: str = "data/raw/EventLog.csv"
-    model_dir: str = "models"
-    model_filename: str = "xgb_model.json"
-    test_size: float = 0.2
-    random_state: int = 42
+from .config import PipelineConfig, default_config
 
 def load_feature_table(config: PipelineConfig) -> pd.DataFrame:
     """Load and preprocess the dataset from disk."""
-    print(f"[INFO] Loading data from {config.data_path}...")
+    data_path = config.data_path
+    print(f"[INFO] Loading data from {data_path}...")
     
-    if not os.path.exists(config.data_path):
-        raise FileNotFoundError(f"Data file not found at {config.data_path}")
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Data file not found at {data_path}")
 
     # Load Data
-    df = pd.read_csv(config.data_path, sep=";")
+    df = pd.read_csv(data_path, sep=";")
     
     # Cleaning & Preprocessing
     df.columns = df.columns.str.strip()
@@ -82,16 +77,16 @@ def evaluate_model(model, X_test, y_test):
 def save_artifacts(config: PipelineConfig, model):
     """Persist model artifacts to disk."""
     os.makedirs(config.model_dir, exist_ok=True)
-    save_path = os.path.join(config.model_dir, config.model_filename)
+    save_path = config.model_dir / config.model_filename
     
-    model.save_model(save_path)
+    model.save_model(str(save_path))
     print(f"[SUCCESS] Model saved to: {save_path}")
 
 @dataclass
 class DefaultModelTrainer:
     """Orchestrator class for the training pipeline."""
     # FIX: Usiamo default_factory per evitare l'errore sui valori mutabili
-    config: PipelineConfig = field(default_factory=PipelineConfig)
+    config: PipelineConfig = field(default_factory=lambda: default_config(Path(".")))
 
     def train_model(self):
         """Execute the full training pipeline."""
