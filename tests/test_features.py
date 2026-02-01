@@ -4,10 +4,9 @@ from pathlib import Path
 
 from src.config import PipelineConfig
 from src.features import (
+    _build_waiting_time_features,
     _load_events,
-    _procedure_matrix,
     _save_features,
-    _summarize_encounter_duration,
 )
 
 
@@ -68,7 +67,7 @@ def test__load_events_parses_timestamps(tmp_path: Path):
     assert events["end:timestamp"].dt.tz is not None
 
 
-def test__summarize_encounter_duration_positive():
+def test__build_waiting_time_features():
     df = pd.DataFrame(
         [
             {
@@ -85,30 +84,18 @@ def test__summarize_encounter_duration_positive():
             },
         ]
     )
-    summary = _summarize_encounter_duration(df)
-    assert summary.loc["enc_a", "event_count"] == 2
-    assert summary.loc["enc_a", "encounter_duration_minutes"] == 120
-
-
-def test__procedure_matrix_counts_topk():
-    df = pd.DataFrame(
-        [
-            {"case:concept:name": "enc_a", "concept:name": "proc_a"},
-            {"case:concept:name": "enc_a", "concept:name": "proc_a"},
-            {"case:concept:name": "enc_a", "concept:name": "proc_b"},
-            {"case:concept:name": "enc_b", "concept:name": "proc_b"},
-        ]
-    )
-    matrix = _procedure_matrix(df, top_k=2)
-    assert "proc_count__proc_a" in matrix.columns
-    assert matrix.loc["enc_a", "proc_count__proc_a"] == 2
-    assert matrix.loc["enc_b", "proc_count__proc_a"] == 0
+    features = _build_waiting_time_features(df)
+    assert len(features) == 2
+    assert "Waiting_Time_Mins" in features.columns
+    assert "Day_Index" in features.columns
+    assert "Arrival_Hour" in features.columns
+    assert features["Waiting_Time_Mins"].iloc[0] == 60
 
 
 def test__save_features_writes_parquet(tmp_path: Path, monkeypatch):
     config = _make_config(tmp_path)
     features = pd.DataFrame(
-        {"encounter_duration_minutes": [60, 30], "total_hours": [1, 0.5]},
+        {"Waiting_Time_Mins": [60, 30], "Day_Index": [1, 2], "Arrival_Hour": [9, 10]},
         index=["enc_a", "enc_b"],
     )
 

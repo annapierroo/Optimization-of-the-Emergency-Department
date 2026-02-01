@@ -62,5 +62,4 @@ def test_default_pipeline_build_features_creates_output(tmp_path, monkeypatch):
     output_path = config.feature_store_dir / config.features_filename
     assert output_path.exists()
     df = pd.read_csv(output_path)
-    assert {"encounter_duration_minutes", "total_hours", "event_count"}.issubset(df.columns)
-    assert any(col.startswith("proc_count__") for col in df.columns)
+    assert {"Waiting_Time_Mins", "Day_Index", "Arrival_Hour"}.issubset(df.columns)
