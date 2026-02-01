@@ -2,11 +2,7 @@ import pandas as pd
 from pathlib import Path
 
 from src.config import PipelineConfig
-from src.features import (
-    FEATURES_FILENAME,
-    PROCESSED_FILENAME,
-    DefaultFeaturePipeline,
-)
+from src.features import DefaultFeaturePipeline
 
 
 def _make_config(tmp_path: Path) -> PipelineConfig:
@@ -15,7 +11,9 @@ def _make_config(tmp_path: Path) -> PipelineConfig:
         data_path=tmp_path / "data" / "raw" / "EventLog.csv",
         raw_data_dir=tmp_path / "data" / "raw",
         processed_data_dir=tmp_path / "data" / "processed",
+        processed_filename="patient_journey_log.csv",
         feature_store_dir=tmp_path / "data" / "features",
+        features_filename="encounter_features.parquet",
         model_dir=tmp_path / "artifacts" / "models",
         model_filename="xgb_model.json",
         test_size=0.2,
@@ -46,7 +44,7 @@ def test_default_pipeline_build_features_creates_output(tmp_path, monkeypatch):
             "end:timestamp": "2020-02-02T04:00:00Z",
         },
     ]
-    processed_path = config.processed_data_dir / PROCESSED_FILENAME
+    processed_path = config.processed_data_dir / config.processed_filename
     processed_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(processed_path, index=False)
 
@@ -61,7 +59,7 @@ def test_default_pipeline_build_features_creates_output(tmp_path, monkeypatch):
     pipeline = DefaultFeaturePipeline(config)
     pipeline.build_features()
 
-    output_path = config.feature_store_dir / FEATURES_FILENAME
+    output_path = config.feature_store_dir / config.features_filename
     assert output_path.exists()
     df = pd.read_csv(output_path)
     assert {"encounter_duration_minutes", "total_hours", "event_count"}.issubset(df.columns)

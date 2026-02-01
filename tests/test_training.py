@@ -12,7 +12,9 @@ def _make_config(tmp_path: Path) -> PipelineConfig:
         data_path=tmp_path / "data" / "raw" / "EventLog.csv",
         raw_data_dir=tmp_path / "data" / "raw",
         processed_data_dir=tmp_path / "data" / "processed",
+        processed_filename="patient_journey_log.csv",
         feature_store_dir=tmp_path / "data" / "features",
+        features_filename="encounter_features.parquet",
         model_dir=tmp_path / "artifacts" / "models",
         model_filename="xgb_model.json",
         test_size=0.2,
@@ -30,7 +32,7 @@ def test_load_feature_table_reads_features():
     """
     tmp_path = Path("/tmp/test_training_load_features")
     config = _make_config(tmp_path)
-    features_path = config.feature_store_dir / "encounter_features.parquet"
+    features_path = config.feature_store_dir / config.features_filename
     features_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"encounter_duration_minutes": [10, 20]}).to_parquet(features_path)
 

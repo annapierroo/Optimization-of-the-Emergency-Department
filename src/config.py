@@ -13,7 +13,9 @@ class PipelineConfig:
     data_path: Path
     raw_data_dir: Path
     processed_data_dir: Path
+    processed_filename: str
     feature_store_dir: Path
+    features_filename: str
     model_dir: Path
     model_filename: str
     test_size: float
@@ -29,7 +31,9 @@ def default_config(project_root: Path) -> PipelineConfig:
         data_path=project_root / "data" / "raw" / "EventLog.csv",
         raw_data_dir=project_root / "data" / "raw",
         processed_data_dir=project_root / "data" / "processed",
+        processed_filename="patient_journey_log.csv",
         feature_store_dir=project_root / "data" / "features",
+        features_filename="encounter_features.parquet",
         model_dir=project_root / "artifacts" / "models",
         model_filename="xgb_model.json",
         test_size=0.2,

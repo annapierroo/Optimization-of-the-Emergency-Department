@@ -18,9 +18,6 @@ sys.path.append(str(PROJECT_ROOT))
 # Changed relative import to absolute to prevent ImportError in standalone execution
 from src.config import PipelineConfig, default_config
 
-PROCESSED_FILENAME = "patient_journey_log.csv"
-FEATURES_FILENAME = "encounter_features.parquet"
-
 
 class FeaturePipelinePort:
     """Creates model-ready feature sets."""
@@ -32,7 +29,7 @@ class FeaturePipelinePort:
 def _load_events(config):
     """Load processed log emitted by ingest_data."""
 
-    processed_path = config.processed_data_dir / PROCESSED_FILENAME
+    processed_path = config.processed_data_dir / config.processed_filename
     if not processed_path.exists():
         # Helpful error message for debugging pipeline order
         raise FileNotFoundError(f"Processed event log not found at: {processed_path}. Did you run 'src/ingest_data.py'?")
@@ -77,7 +74,7 @@ def _procedure_matrix(events, top_k=50):
 def _save_features(config, features):
     """Persist feature table to the configured feature store directory."""
 
-    output_path = config.feature_store_dir / FEATURES_FILENAME
+    output_path = config.feature_store_dir / config.features_filename
     os.makedirs(output_path.parent, exist_ok=True)
     features.to_parquet(output_path)
     return output_path
