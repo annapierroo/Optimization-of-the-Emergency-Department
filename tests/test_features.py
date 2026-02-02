@@ -21,6 +21,7 @@ def _make_config(tmp_path: Path) -> PipelineConfig:
         features_filename="encounter_features.parquet",
         model_dir=tmp_path / "artifacts" / "models",
         model_filename="xgb_model.json",
+        metrics_filename="metrics.json",
         test_size=0.2,
         random_state=42,
         reports_dir=tmp_path / "reports",

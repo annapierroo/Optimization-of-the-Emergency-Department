@@ -7,6 +7,8 @@ filling the logic to train and persist the XGBoost model.
 import pandas as pd
 import xgboost as xgb
 import os
+import logging
+import json
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 from dataclasses import dataclass, field  # <--- AGGIUNTO 'field'
@@ -14,30 +16,21 @@ from pathlib import Path
 
 from .config import PipelineConfig, default_config
 
+logger = logging.getLogger(__name__)
+
 def load_feature_table(config: PipelineConfig) -> pd.DataFrame:
-    """Load and preprocess the dataset from disk."""
-    data_path = config.data_path
-    print(f"[INFO] Loading data from {data_path}...")
+    """Load engineered features from disk."""
+    data_path = config.feature_store_dir / config.features_filename
+    logger.info("Loading features from %s", data_path)
     
     if not os.path.exists(data_path):
-        raise FileNotFoundError(f"Data file not found at {data_path}")
+        raise FileNotFoundError(f"Feature file not found at {data_path}")
 
-    # Load Data
-    df = pd.read_csv(data_path, sep=";")
-    
-    # Cleaning & Preprocessing
-    df.columns = df.columns.str.strip()
-    df['START'] = pd.to_datetime(df['START'], utc=True, errors='coerce')
-    df['STOP'] = pd.to_datetime(df['STOP'], utc=True, errors='coerce')
-    df = df.dropna(subset=['START', 'STOP'])
-
-    # Target Calculation
-    df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
-    df = df[df['Waiting_Time_Mins'] >= 0]
-
-    # Feature Engineering
-    df['Day_Index'] = df['START'].dt.dayofweek
-    df['Arrival_Hour'] = df['START'].dt.hour
+    df = pd.read_parquet(data_path)
+    required_columns = {"Waiting_Time_Mins", "Day_Index", "Arrival_Hour"}
+    missing = required_columns.difference(df.columns)
+    if missing:
+        raise ValueError(f"Missing required feature columns: {sorted(missing)}")
     
     print(f"[INFO] Data loaded successfully. Shape: {df.shape}")
     return df
@@ -74,13 +67,19 @@ def evaluate_model(model, X_test, y_test):
     print(f"[RESULT] Model Performance - Mean Absolute Error: {mae:.2f} minutes")
     return {"mae": mae}
 
-def save_artifacts(config: PipelineConfig, model):
-    """Persist model artifacts to disk."""
+def save_artifacts(config: PipelineConfig, model, metrics):
+    """Persist model and metrics artifacts to disk."""
     os.makedirs(config.model_dir, exist_ok=True)
-    save_path = config.model_dir / config.model_filename
-    
-    model.save_model(str(save_path))
-    print(f"[SUCCESS] Model saved to: {save_path}")
+    model_path = config.model_dir / config.model_filename
+    metrics_path = config.model_dir / config.metrics_filename
+
+    model.save_model(str(model_path))
+    with open(metrics_path, "w", encoding="utf-8") as metrics_file:
+        json.dump(metrics, metrics_file, indent=2)
+
+    print(f"[SUCCESS] Model saved to: {model_path}")
+    print(f"[SUCCESS] Metrics saved to: {metrics_path}")
+    return {"model_path": str(model_path), "metrics_path": str(metrics_path)}
 
 @dataclass
 class DefaultModelTrainer:
@@ -99,16 +98,21 @@ class DefaultModelTrainer:
             
             # 3. Train Model
             model = train_baseline_model(X_train, y_train, self.config)
-            
+
             # 4. Evaluate
-            evaluate_model(model, X_test, y_test)
+            metrics = evaluate_model(model, X_test, y_test)
             
             # 5. Save
-            save_artifacts(self.config, model)
+            save_artifacts(self.config, model, metrics)
+
+            # 6. logging the process
+            logger.info("Training pipeline completed successfully with metrics: %s", metrics)
             
-        except Exception as e:
-            print(f"[ERROR] Pipeline failed: {e}")
+        except Exception:
+            logger.exception("Training pipeline failed")
+            raise           
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     trainer = DefaultModelTrainer()
     trainer.train_model()

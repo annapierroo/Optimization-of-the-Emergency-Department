@@ -1,4 +1,4 @@
-"""Feature engineering pipeline for encounter-duration prediction."""
+"""Feature engineering pipeline for waiting-time prediction."""
 
 from __future__ import annotations
 
@@ -41,34 +41,27 @@ def _load_events(config):
     return df
 
 
-def _summarize_encounter_duration(events):
-    """Compute encounter duration and base stats per encounter."""
+def _build_waiting_time_features(events):
+    """Build event-level features for waiting-time prediction."""
 
-    summary = (
-        events.groupby("case:concept:name")
-        .agg(
-            encounter_start=("start:timestamp", "min"),
-            encounter_end=("end:timestamp", "max"),
-            event_count=("concept:name", "count"),
-        )
+    features = events.copy()
+    features["Waiting_Time_Mins"] = (
+        (features["end:timestamp"] - features["start:timestamp"]).dt.total_seconds().div(60)
     )
-    summary["encounter_duration_minutes"] = (
-        (summary["encounter_end"] - summary["encounter_start"]).dt.total_seconds().div(60)
-    )
-    summary = summary[summary["encounter_duration_minutes"] > 0]
-    summary["total_hours"] = summary["encounter_duration_minutes"] / 60.0
-    return summary
-
-
-def _procedure_matrix(events, top_k=50):
-    """Pivot event log so each column counts a procedure for each encounter."""
-
-    events["concept:name"] = events["concept:name"].astype(str).str.strip()
-    top_procedures = events["concept:name"].value_counts().nlargest(top_k).index
-    filtered = events[events["concept:name"].isin(top_procedures)]
-    matrix = filtered.groupby(["case:concept:name", "concept:name"]).size().unstack(fill_value=0)
-    matrix.columns = [f"proc_count__{col}" for col in matrix.columns]
-    return matrix
+    features = features[features["Waiting_Time_Mins"] >= 0]
+    features["Day_Index"] = features["start:timestamp"].dt.dayofweek
+    features["Arrival_Hour"] = features["start:timestamp"].dt.hour
+    return features[
+        [
+            "case:concept:name",
+            "concept:name",
+            "start:timestamp",
+            "end:timestamp",
+            "Day_Index",
+            "Arrival_Hour",
+            "Waiting_Time_Mins",
+        ]
+    ]
 
 
 def _save_features(config, features):
@@ -88,12 +81,9 @@ class DefaultFeaturePipeline(FeaturePipelinePort):
 
     def build_features(self):
         events = _load_events(self.config)
-        durations = _summarize_encounter_duration(events)
-        procedures = _procedure_matrix(events)
-        features = durations.join(procedures, how="left")
-        features.fillna(0, inplace=True)
+        features = _build_waiting_time_features(events)
         output_path = _save_features(self.config, features)
-        print(f"Encounter features successfully stored at {output_path}")
+        print(f"Waiting-time features successfully stored at {output_path}")
 
 # --- EXECUTION ENTRY POINT ---
 # This block ensures the pipeline runs only when executed directly

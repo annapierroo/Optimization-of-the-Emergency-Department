@@ -18,6 +18,7 @@ class PipelineConfig:
     features_filename: str
     model_dir: Path
     model_filename: str
+    metrics_filename: str
     test_size: float
     random_state: int
     reports_dir: Path
@@ -36,6 +37,7 @@ def default_config(project_root: Path) -> PipelineConfig:
         features_filename="encounter_features.parquet",
         model_dir=project_root / "artifacts" / "models",
         model_filename="xgb_model.json",
+        metrics_filename="metrics.json",
         test_size=0.2,
         random_state=42,
         reports_dir=project_root / "reports",
