@@ -1,6 +1,7 @@
 import os
 import re
-
+import time
+import warnings
 import matplotlib.pyplot as plt
 import pandas as pd
 import pm4py
@@ -20,6 +21,31 @@ WAITING_ECDF_DAYTYPE = "reports/figures/waiting_holiday_weekend_weekday_ecdf.png
 WAITING_BOXPLOT_DAYNIGHT = "reports/figures/waiting_day_vs_night_boxplot.png"
 WAITING_ECDF_DAYNIGHT = "reports/figures/waiting_day_vs_night_ecdf.png"
 OUTPUT_IMG_PATH_TIME = "reports/figures/patient_journey_dfg_time.png"
+
+MAX_TIME_SECONDS = 20.0
+
+class Timer :
+    def __init__(self):
+        self.start_time = {}
+        self.durations = {}
+        self.total_start = time.time()
+
+    def start(self, label: str) :
+        self.start_time[label] = time.time()
+
+    def end(self, label: str) :
+        if label not in self.start_time:
+            raise ValueError(f"Timer for '{label}' was not started.")
+        elapsed = time.time() - self.start_time[label]
+        self.durations[label] = elapsed
+
+    def total(self):
+        return time.time() - self.total_start
+    
+    def summary(self):
+        print("\n[TIMER SUMMARY]")
+        for label, duration in self.durations.items():
+            print(f"{label}: {duration:.2f}s")
 
 # Boxplot on log1p scale 
 def plot_boxplot_log1p(groups: dict, title: str, output_path: str):
@@ -69,10 +95,15 @@ def plot_ecdf_minutes(groups: dict, title: str, output_path: str):
     plt.close()
 
 def discover_process():
+    timer = Timer()
+
+    timer.start("Ingestion")
     df = pd.read_csv(PROCESSED_DATA_PATH)
     df['time:timestamp'] = pd.to_datetime(df['time:timestamp'], utc=True)
+    timer.end("Ingestion")
 
     # Grouping similar activities
+    timer.start("Activity Grouping")
     s = df['concept:name'].astype(str).str.strip().str.lower()
 
     def _collapse(rule_regex: str, label: str) -> None:
@@ -120,10 +151,14 @@ def discover_process():
         _collapse(rule, label)
 
     df['concept:name'] = s
+    timer.end("Activity Grouping")
 
+    timer.start("Process Grouping")
     case_sizes = df.groupby('case:concept:name').size()
     df = df[df['case:concept:name'].isin(case_sizes[case_sizes >= 2].index)]
+    timer.end("Process Grouping")
 
+    timer.start("Process Discovery Graph")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     dfg, start_activities, end_activities = pm4py.discover_dfg(df)
 
@@ -135,11 +170,13 @@ def discover_process():
         OUTPUT_IMG_PATH,
         variant="frequency",
     )
+    timer.end("Process Discovery Graph")
 
     df["start:timestamp"] = pd.to_datetime(df["start:timestamp"], utc=True)
     df["end:timestamp"] = pd.to_datetime(df["end:timestamp"], utc=True)
 
     # Waiting time
+    timer.start("Waiting times and Performance DFG")
     df = df.sort_values(["case:concept:name", "start:timestamp", "end:timestamp"]).copy()
 
     df["next_start"] = df.groupby("case:concept:name")["start:timestamp"].shift(-1)
@@ -147,9 +184,9 @@ def discover_process():
 
     df["raw_gap_min"] = ((df["next_start"] - df["end:timestamp"]).dt.total_seconds() / 60.0).round(2)
     df["waiting_min"] = df["raw_gap_min"].clip(lower=0).round(2)
-   
+    timer.end("Waiting times and Performance DFG")
 
-
+    timer.start("Performance DFG")
     perf_dfg, sa, ea = pm4py.discover_performance_dfg(
         df,
         case_id_key="case:concept:name",
@@ -204,7 +241,7 @@ def discover_process():
     )
  
     Source(dot).render(filename=os.path.splitext(OUTPUT_IMG_PATH_TIME)[0], format="png", cleanup=True) 
-  
+    timer.end("Performance DFG")
 
     print(f"Saved performance DFG to: {OUTPUT_IMG_PATH_TIME}")
     trans = df.dropna(subset=["next_activity", "raw_gap_min"]).copy()
@@ -238,6 +275,7 @@ def discover_process():
     ]].to_csv(WAITING_CSV, index=False)
 
     # Day vs Night analysis
+    timer.start("Day vs Night Waiting Time Analysis")
     daynight_groups = {
         "day": trans[trans["time_of_day"] == "day"]["waiting_min"],
         "night": trans[trans["time_of_day"] == "night"]["waiting_min"],
@@ -262,8 +300,10 @@ def discover_process():
     summary_dn = pd.DataFrame({k: _summary(v) for k, v in daynight_groups.items()}).T
     print("\nWaiting time summary (minutes, waiting>0) - Day vs Night")
     print(summary_dn)
+    timer.end("Day vs Night Waiting Time Analysis")
 
     # Plots to compare waiting times
+    timer.start("Weekend vs Weekday and Day Type Waiting Time Analysis")
     weekend_groups = {
         "weekday": trans[~trans["is_weekend"]]["waiting_min"],
         "weekend": trans[trans["is_weekend"]]["waiting_min"],
@@ -279,9 +319,18 @@ def discover_process():
 
     plot_boxplot_log1p(daytype_groups, "Waiting time by Holiday/Weekend/Weekday (minutes)", WAITING_BOXPLOT_DAYTYPE)
     plot_ecdf_minutes(daytype_groups, "Waiting time by Holiday/Weekend/Weekday (minutes)", WAITING_ECDF_DAYTYPE)
+    timer.end("Weekend vs Weekday and Day Type Waiting Time Analysis")
 
     print(f"Saved waiting transitions to: {WAITING_CSV}")
     print(f"Saved plots to: {WAITING_BOXPLOT_WEEKEND}, {WAITING_ECDF_WEEKEND}, {WAITING_BOXPLOT_DAYTYPE}, {WAITING_ECDF_DAYTYPE}")
+    
+    total_time = timer.total()
+    timer.summary()
+    if total_time > MAX_TIME_SECONDS:
+        warnings.warn(f"WARNING: Process discovery took {total_time:.2f}s, which exceeds the maximum threshold of {MAX_TIME_SECONDS}s.")
+    else:
+        print(f"Process discovery completed in {total_time:.2f}s.")
+
 
 if __name__ == "__main__":
     discover_process()

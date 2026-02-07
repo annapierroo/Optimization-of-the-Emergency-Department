@@ -1,6 +1,7 @@
 import pandas as pd
 import sys
 import os
+import warnings
 
 RAW_DATA_PATH = "data/raw/EventLog.csv"
 PROCESSED_DATA_PATH = "data/processed/patient_journey_log.csv"
@@ -13,13 +14,23 @@ def ingest_and_clean():
     except FileNotFoundError:
         print(f"ERROR: File {RAW_DATA_PATH} not found.")
         sys.exit(1)
+    except ValueError as e:
+        print(f"ERROR: One or more columns in the CSV file are missing or have incorrect data types: {e}")
+        sys.exit(1)
+
+    missing_data = df.isnull().sum()
+    if missing_data.any():
+       warnings.warn(f"Missing data detected:\n{missing_data[missing_data > 0]}")
 
     df['START'] = pd.to_datetime(df['START'], utc=True, errors='coerce')
     df['STOP'] = pd.to_datetime(df['STOP'], utc=True, errors='coerce')
-
     df['DESCRIPTION'] = df['DESCRIPTION'].fillna('UNKNOWN_ACTIVITY')
 
-    df.dropna(subset=['ENCOUNTER', 'START', 'STOP', 'DESCRIPTION'], inplace=True)
+    dataframe_length = len(df)
+    df.dropna(subset=['START', 'STOP', 'DESCRIPTION'], inplace=True)
+    dropped_rows = dataframe_length - len(df)
+    if dropped_rows > 0:
+        warnings.warn(f"Dropped {dropped_rows} rows due to insufficient data.")
 
     n_patients = 50 # adjust as needed
     encounter_counts = df['ENCOUNTER'].unique()[:n_patients]
@@ -37,8 +48,18 @@ def ingest_and_clean():
     df.rename(columns=rename_mapping, inplace=True)
     df['time:timestamp'] = df['start:timestamp']
 
-    df.dropna(subset=['case:concept:name', 'concept:name', 'start:timestamp', 'end:timestamp', 'time:timestamp'], inplace=True)
     df = df.sort_values(by=["case:concept:name", "start:timestamp"])
+
+    durations = df['end:timestamp'] - df['start:timestamp']
+    time_zero = (durations.dt.total_seconds() == 0)
+    zero_time_events = time_zero.sum()
+    if zero_time_events > 0:
+        warnings.warn(f"Found {zero_time_events} events with zero duration. Deleting them.")
+        df = df[~time_zero]
+
+    average_duration = durations.mean()
+    if average_duration.total_seconds() < 1:
+        warnings.warn("Average duration of events is almost zero. This may indicate an issue with the timestamps.")
 
     os.makedirs(os.path.dirname(PROCESSED_DATA_PATH), exist_ok=True)
     df.to_csv(PROCESSED_DATA_PATH, index=False)
