@@ -1,6 +1,5 @@
 import os
 import re
-import time
 import warnings
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -8,6 +7,7 @@ import pm4py
 import holidays
 from graphviz import Source
 from pm4py.visualization.dfg import visualizer as dfg_visualizer
+from utils import timer
 
 PROCESSED_DATA_PATH = "data/processed/patient_journey_log.csv"
 OUTPUT_DIR = "reports/figures"
@@ -23,29 +23,6 @@ WAITING_ECDF_DAYNIGHT = "reports/figures/waiting_day_vs_night_ecdf.png"
 OUTPUT_IMG_PATH_TIME = "reports/figures/patient_journey_dfg_time.png"
 
 MAX_TIME_SECONDS = 20.0
-
-class Timer :
-    def __init__(self):
-        self.start_time = {}
-        self.durations = {}
-        self.total_start = time.time()
-
-    def start(self, label: str) :
-        self.start_time[label] = time.time()
-
-    def end(self, label: str) :
-        if label not in self.start_time:
-            raise ValueError(f"Timer for '{label}' was not started.")
-        elapsed = time.time() - self.start_time[label]
-        self.durations[label] = elapsed
-
-    def total(self):
-        return time.time() - self.total_start
-    
-    def summary(self):
-        print("\n[TIMER SUMMARY]")
-        for label, duration in self.durations.items():
-            print(f"{label}: {duration:.2f}s")
 
 def creation_check(path: str, label: str):
     if not os.path.exists(path):
@@ -117,7 +94,7 @@ def plot_ecdf_minutes(groups: dict, title: str, output_path: str):
     plt.close()
 
 def discover_process():
-    timer = Timer()
+    timer = timer()
 
     timer.start("Ingestion")
     try:
