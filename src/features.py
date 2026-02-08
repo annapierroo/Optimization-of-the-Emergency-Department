@@ -2,21 +2,12 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 
-# --- SYSTEM PATH SETUP ---
-# We add the project root to sys.path to allow imports from 'src' 
-# even when running this file directly as a script (python src/features.py).
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.append(str(PROJECT_ROOT))
-
-# Changed relative import to absolute to prevent ImportError in standalone execution
-from src.config import PipelineConfig, default_config
+from .config import PipelineConfig, default_config
 
 
 class FeaturePipelinePort:
@@ -156,7 +147,7 @@ def _save_features(config, features):
     """Persist feature table to the configured feature store directory."""
 
     output_path = config.feature_store_dir / config.features_filename
-    os.makedirs(output_path.parent, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     features.to_parquet(output_path)
     return output_path
 
@@ -176,11 +167,6 @@ class DefaultFeaturePipeline(FeaturePipelinePort):
 # --- EXECUTION ENTRY POINT ---
 # This block ensures the pipeline runs only when executed directly
 if __name__ == "__main__":
-    print("🛠  Starting Feature Engineering Pipeline...")
-    
-    # Initialize configuration using the project root determined above
-    cfg = default_config(PROJECT_ROOT)
-    
-    # Run the pipeline
-    pipeline = DefaultFeaturePipeline(cfg)
-    pipeline.build_features()
+    project_root = Path(__file__).resolve().parents[1]
+    cfg = default_config(project_root)
+    DefaultFeaturePipeline(cfg).build_features()
