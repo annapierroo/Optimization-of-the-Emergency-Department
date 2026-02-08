@@ -47,6 +47,28 @@ class Timer :
         for label, duration in self.durations.items():
             print(f"{label}: {duration:.2f}s")
 
+def creation_check(path: str, label: str):
+    if not os.path.exists(path):
+       warnings.warn(f"{label} file not found at: {path}. Please run the data ingestion step first or check if the file exists.")
+
+def littledata_warning(groups: dict, min_count : int, plot_name: str):
+    valid_groups= {}
+    skip = False
+
+    for name, vals in groups.items():
+        v = pd.Series(vals).dropna().astype(float)
+        v = v[v > 0]
+        if len(v) < min_count:
+            warnings.warn(f"Group '{name}' has only {len(v)} valid waiting time entries, which may lead to unreliable results in {plot_name}.")
+            skip = True
+        else:
+            valid_groups[name] = v
+        if len(v) < min_count:
+            warnings.warn(f"Group '{name}' has only {len(v)} valid waiting time entries, which may lead to unreliable results in {plot_name}.")
+            skip = True
+
+        return valid_groups, skip
+    
 # Boxplot on log1p scale 
 def plot_boxplot_log1p(groups: dict, title: str, output_path: str):
     labels = []
@@ -98,8 +120,29 @@ def discover_process():
     timer = Timer()
 
     timer.start("Ingestion")
-    df = pd.read_csv(PROCESSED_DATA_PATH)
-    df['time:timestamp'] = pd.to_datetime(df['time:timestamp'], utc=True)
+    try:
+        if not os.path.exists(PROCESSED_DATA_PATH):
+            raise FileNotFoundError(f"Processed data file not found at: {PROCESSED_DATA_PATH}. Please run the data ingestion step first or check if the file exists.")
+        df = pd.read_csv(PROCESSED_DATA_PATH)
+        
+        if df.empty:
+            warnings.warn(f"The processed data file at {PROCESSED_DATA_PATH} is empty. No data to process.")
+
+        required_cols = {
+        "case:concept:name",
+        "concept:name",
+        "time:timestamp",
+        "start:timestamp",
+        "end:timestamp",
+        }
+        missing_cols = required_cols - set(df.columns)
+        if missing_cols:
+            raise ValueError(f"Missing required columns in the processed data: {missing_cols}")
+        df['time:timestamp'] = pd.to_datetime(df['time:timestamp'], utc=True)
+
+    except Exception as e:
+        warnings.warn(f"Ingestion error: {e}")
+        return
     timer.end("Ingestion")
 
     # Grouping similar activities
@@ -170,13 +213,14 @@ def discover_process():
         OUTPUT_IMG_PATH,
         variant="frequency",
     )
+    creation_check(OUTPUT_IMG_PATH, "Frequency Process Discovery Graph")
     timer.end("Process Discovery Graph")
 
     df["start:timestamp"] = pd.to_datetime(df["start:timestamp"], utc=True)
     df["end:timestamp"] = pd.to_datetime(df["end:timestamp"], utc=True)
 
     # Waiting time
-    timer.start("Waiting times and Performance DFG")
+    timer.start("Waiting times computation")
     df = df.sort_values(["case:concept:name", "start:timestamp", "end:timestamp"]).copy()
 
     df["next_start"] = df.groupby("case:concept:name")["start:timestamp"].shift(-1)
@@ -184,7 +228,10 @@ def discover_process():
 
     df["raw_gap_min"] = ((df["next_start"] - df["end:timestamp"]).dt.total_seconds() / 60.0).round(2)
     df["waiting_min"] = df["raw_gap_min"].clip(lower=0).round(2)
-    timer.end("Waiting times and Performance DFG")
+    if (df["waiting_min"]>0).sum() == 0:
+        warnings.warn("No positive waiting times found in the data, skipping the whole waiting time analysis. Please check the dataset.")
+        return
+    timer.end("Waiting times computation")
 
     timer.start("Performance DFG")
     perf_dfg, sa, ea = pm4py.discover_performance_dfg(
@@ -241,6 +288,7 @@ def discover_process():
     )
  
     Source(dot).render(filename=os.path.splitext(OUTPUT_IMG_PATH_TIME)[0], format="png", cleanup=True) 
+    creation_check(OUTPUT_IMG_PATH_TIME, "Performance Process Discovery Graph")
     timer.end("Performance DFG")
 
     print(f"Saved performance DFG to: {OUTPUT_IMG_PATH_TIME}")
@@ -253,11 +301,11 @@ def discover_process():
     trans["is_holiday"] = trans["date"].apply(lambda d: d in ma_holidays)
     trans["is_weekend"] = trans["start:timestamp"].dt.weekday >= 5
     trans["day_type"] = trans.apply(lambda r: "holiday" if r["is_holiday"] else ("weekend" if r["is_weekend"] else "weekday"), axis=1)
+
     # Day/Night based on start time of the current activity (6-18 = day)
     trans["hour"] = trans["start:timestamp"].dt.hour
     trans["time_of_day"] = trans["hour"].apply(lambda h: "day" if 6 <= h < 18 else "night")
 
-    
     os.makedirs(os.path.dirname(WAITING_CSV), exist_ok=True)
     trans[[
         "case:concept:name",
@@ -280,9 +328,15 @@ def discover_process():
         "day": trans[trans["time_of_day"] == "day"]["waiting_min"],
         "night": trans[trans["time_of_day"] == "night"]["waiting_min"],
     }
+    valid_groups, skip = littledata_warning(daynight_groups, min_count=10, plot_name="Day vs Night Boxplot",)
+    if not skip:
+        plot_boxplot_log1p(valid_groups, "Waiting time by Day vs Night (minutes)", WAITING_BOXPLOT_DAYNIGHT)
+        creation_check(WAITING_BOXPLOT_DAYNIGHT, "Day vs Night Boxplot")
 
-    plot_boxplot_log1p(daynight_groups, "Waiting time by Day vs Night (minutes)", WAITING_BOXPLOT_DAYNIGHT)
-    plot_ecdf_minutes(daynight_groups, "Waiting time by Day vs Night (minutes)", WAITING_ECDF_DAYNIGHT)
+    valid_groups, skip = littledata_warning(daynight_groups, min_count=20, plot_name="Day vs Night ECDF",)
+    if not skip:
+        plot_ecdf_minutes(valid_groups, "Waiting time by Day vs Night (minutes)", WAITING_ECDF_DAYNIGHT)
+        creation_check(WAITING_ECDF_DAYNIGHT, "Day vs Night ECDF")
 
     def _summary(series: pd.Series) -> dict:
         s = pd.Series(series).dropna().astype(float)

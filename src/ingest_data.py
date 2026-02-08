@@ -32,7 +32,7 @@ def ingest_and_clean():
     if dropped_rows > 0:
         warnings.warn(f"Dropped {dropped_rows} rows due to insufficient data.")
 
-    n_patients = 50 # adjust as needed
+    n_patients = 200 # adjust as needed
     encounter_counts = df['ENCOUNTER'].unique()[:n_patients]
     df = df[df['ENCOUNTER'].isin(encounter_counts)].copy()
 
@@ -61,8 +61,8 @@ def ingest_and_clean():
         warnings.warn(f"Found {zero_time_events} events with zero duration. Deleting them.")
         df = df[~time_zero]
 
-    df[previous_end] = df.groupby('case:concept:name')['end:timestamp'].shift(1)
-    overlapping_events = (df['start:timestamp'] < df[previous_end]) & (df[previous_end].notna())
+    df['previous_end'] = df.groupby('case:concept:name')['end:timestamp'].shift(1)
+    overlapping_events = (df['start:timestamp'] < df['previous_end']) & (df['previous_end'].notna())
     n_overlaps = overlapping_events.sum()
     if n_overlaps > 0:
         warnings.warn(f"Found {n_overlaps} overlapping events for the same patient. This may indicate data quality issues.")
