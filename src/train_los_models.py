@@ -18,7 +18,7 @@ from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 
 from .config import PipelineConfig, default_config
 
@@ -34,7 +34,8 @@ class LosTrainingArtifacts:
 
 
 def _load_features(config: PipelineConfig) -> pd.DataFrame:
-    path = config.feature_store_dir / config.features_filename
+    los_filename = getattr(config, "los_features_filename", config.features_filename)
+    path = config.feature_store_dir / los_filename
     if not path.exists():
         raise FileNotFoundError(f"Feature file not found at {path}")
     df = pd.read_parquet(path)
@@ -46,7 +47,7 @@ def _prepare_los_dataset(df: pd.DataFrame):
     """Prepare notebook-compatible LOS training matrix.
 
     Returns:
-        X (DataFrame), y (Series), encoders (dict[str, LabelEncoder])
+        X (DataFrame), y (Series), encoders (dict[str, object | None])
     """
 
     required = {
