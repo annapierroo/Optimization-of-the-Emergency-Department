@@ -50,12 +50,22 @@ def ingest_and_clean():
 
     df = df.sort_values(by=["case:concept:name", "start:timestamp"])
 
+    inverted_time_events = (df['end:timestamp'] < df['start:timestamp']).sum()
+    if inverted_time_events > 0:
+        warnings.warn(f"Found {inverted_time_events} events where end time is before start time. This may indicate data quality issues.")
+
     durations = df['end:timestamp'] - df['start:timestamp']
     time_zero = (durations.dt.total_seconds() == 0)
     zero_time_events = time_zero.sum()
     if zero_time_events > 0:
         warnings.warn(f"Found {zero_time_events} events with zero duration. Deleting them.")
         df = df[~time_zero]
+
+    df[previous_end] = df.groupby('case:concept:name')['end:timestamp'].shift(1)
+    overlapping_events = (df['start:timestamp'] < df[previous_end]) & (df[previous_end].notna())
+    n_overlaps = overlapping_events.sum()
+    if n_overlaps > 0:
+        warnings.warn(f"Found {n_overlaps} overlapping events for the same patient. This may indicate data quality issues.")
 
     average_duration = durations.mean()
     if average_duration.total_seconds() < 1:
