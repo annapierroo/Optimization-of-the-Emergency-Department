@@ -168,7 +168,7 @@ def _import_module(module_name: str):
 
 def test_load_feature_table_reads_features(tmp_path: Path, monkeypatch):
     _install_ml_stubs(monkeypatch)
-    training = _import_module("src.training")
+    training = _import_module("src.train_wait_time")
 
     config = _make_config(tmp_path)
     feature_path = config.feature_store_dir / config.features_filename
@@ -184,7 +184,7 @@ def test_load_feature_table_reads_features(tmp_path: Path, monkeypatch):
 
 def test_load_feature_table_validates_required_columns(tmp_path: Path, monkeypatch):
     _install_ml_stubs(monkeypatch)
-    training = _import_module("src.training")
+    training = _import_module("src.train_wait_time")
 
     config = _make_config(tmp_path)
     feature_path = config.feature_store_dir / config.features_filename
@@ -197,7 +197,7 @@ def test_load_feature_table_validates_required_columns(tmp_path: Path, monkeypat
 
 def test_split_train_val_splits_data(tmp_path: Path, monkeypatch):
     _install_ml_stubs(monkeypatch)
-    training = _import_module("src.training")
+    training = _import_module("src.train_wait_time")
 
     config = _make_config(tmp_path)
     df = pd.DataFrame(
@@ -216,7 +216,7 @@ def test_split_train_val_splits_data(tmp_path: Path, monkeypatch):
 
 def test_train_baseline_model_returns_fitted_model(tmp_path: Path, monkeypatch):
     _install_ml_stubs(monkeypatch)
-    training = _import_module("src.training")
+    training = _import_module("src.train_wait_time")
 
     config = _make_config(tmp_path)
     x_train = pd.DataFrame({"Day_Index": [1, 2], "Arrival_Hour": [9, 10]})
@@ -229,7 +229,7 @@ def test_train_baseline_model_returns_fitted_model(tmp_path: Path, monkeypatch):
 
 def test_evaluate_model_returns_mae(monkeypatch):
     _install_ml_stubs(monkeypatch)
-    training = _import_module("src.training")
+    training = _import_module("src.train_wait_time")
 
     class DummyModel:
         def predict(self, x):
@@ -245,7 +245,7 @@ def test_evaluate_model_returns_mae(monkeypatch):
 
 def test_save_artifacts_writes_model_and_metrics(tmp_path: Path, monkeypatch):
     _install_ml_stubs(monkeypatch)
-    training = _import_module("src.training")
+    training = _import_module("src.train_wait_time")
 
     config = _make_config(tmp_path)
 
@@ -262,7 +262,7 @@ def test_save_artifacts_writes_model_and_metrics(tmp_path: Path, monkeypatch):
 
 def test_default_trainer_orchestrates_pipeline(tmp_path: Path, monkeypatch):
     _install_ml_stubs(monkeypatch)
-    training = _import_module("src.training")
+    training = _import_module("src.train_wait_time")
 
     config = _make_config(tmp_path)
     call_order = []

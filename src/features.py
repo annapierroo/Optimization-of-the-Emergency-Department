@@ -33,7 +33,7 @@ def _load_events(config):
 
 
 def _build_waiting_time_features(events):
-    """Build a superset feature table for training.py and LOS notebook."""
+    """Build a superset feature table"""
 
     features = events.copy()
     features["Waiting_Time_Mins"] = (

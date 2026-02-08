@@ -3,6 +3,7 @@ from pathlib import Path
 
 from src.config import PipelineConfig
 from src.features import DefaultFeaturePipeline
+from src.pipeline_architecture import EmergencyDepartmentPipeline
 
 
 def _make_config(tmp_path: Path) -> PipelineConfig:
@@ -65,3 +66,49 @@ def test_default_pipeline_build_features_creates_output(tmp_path, monkeypatch):
     df = pd.read_csv(output_path)
     assert {"Waiting_Time_Mins", "Day_Index", "Arrival_Hour"}.issubset(df.columns)
     assert {"duration_hours", "duration_hours_capped", "DESCRIPTION", "REASONDESCRIPTION"}.issubset(df.columns)
+
+
+def test_emergency_department_pipeline_runs_multiple_trainers_in_order(tmp_path):
+    config = _make_config(tmp_path)
+    calls = []
+
+    class FakeIngestion:
+        def load_raw_data(self):
+            calls.append("load")
+
+        def clean_data(self):
+            calls.append("clean")
+
+    class FakeFeaturePipeline:
+        def build_features(self):
+            calls.append("features")
+
+    class FakeTrainer:
+        def __init__(self, name):
+            self.name = name
+
+        def train_model(self):
+            calls.append(f"train:{self.name}")
+
+    class FakeEvaluator:
+        def run_evaluation(self):
+            calls.append("evaluate")
+
+    pipeline = EmergencyDepartmentPipeline(
+        config=config,
+        ingestion=FakeIngestion(),
+        feature_pipeline=FakeFeaturePipeline(),
+        trainers=[FakeTrainer("wait_time"), FakeTrainer("los"), FakeTrainer("next_activity")],
+        evaluator=FakeEvaluator(),
+    )
+
+    pipeline.run()
+    assert calls == [
+        "load",
+        "clean",
+        "features",
+        "train:wait_time",
+        "train:los",
+        "train:next_activity",
+        "evaluate",
+    ]

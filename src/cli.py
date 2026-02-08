@@ -21,7 +21,8 @@ def main() -> None:
     elif args.mode == "features":
         pipeline.feature_pipeline.build_features()
     elif args.mode == "train":
-        pipeline.trainer.train_model()
+        for trainer in pipeline.trainers:
+            trainer.train_model()
     elif args.mode == "evaluate":
         pipeline.evaluator.run_evaluation()
     else:
