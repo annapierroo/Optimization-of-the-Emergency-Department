@@ -22,6 +22,13 @@ class PipelineConfig:
     test_size: float
     random_state: int
     reports_dir: Path
+    los_best_model_filename: str = "best_los_model.joblib"
+    los_encoders_filename: str = "los_encoders.joblib"
+    los_metrics_filename: str = "los_metrics.json"
+    los_leaderboard_filename: str = "los_leaderboard.csv"
+    next_activity_model_filename: str = "next_activity_xgb.json"
+    next_activity_input_encoder_filename: str = "input_encoder.pkl"
+    next_activity_output_encoder_filename: str = "output_encoder.pkl"
 
 
 def default_config(project_root: Path) -> PipelineConfig:
@@ -41,4 +48,11 @@ def default_config(project_root: Path) -> PipelineConfig:
         test_size=0.2,
         random_state=42,
         reports_dir=project_root / "reports",
+        los_best_model_filename="best_los_model.joblib",
+        los_encoders_filename="los_encoders.joblib",
+        los_metrics_filename="los_metrics.json",
+        los_leaderboard_filename="los_leaderboard.csv",
+        next_activity_model_filename="next_activity_xgb.json",
+        next_activity_input_encoder_filename="input_encoder.pkl",
+        next_activity_output_encoder_filename="output_encoder.pkl",
     )

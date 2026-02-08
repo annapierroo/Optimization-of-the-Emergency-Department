@@ -196,10 +196,10 @@ def _save_los_artifacts(
     config.model_dir.mkdir(parents=True, exist_ok=True)
     best_bundle = trained_models[best_name]
 
-    model_path = config.model_dir / "best_los_model.joblib"
-    encoders_path = config.model_dir / "los_encoders.joblib"
-    metrics_path = config.model_dir / "los_metrics.json"
-    leaderboard_path = config.model_dir / "los_leaderboard.csv"
+    model_path = config.model_dir / config.los_best_model_filename
+    encoders_path = config.model_dir / config.los_encoders_filename
+    metrics_path = config.model_dir / config.los_metrics_filename
+    leaderboard_path = config.model_dir / config.los_leaderboard_filename
 
     joblib.dump(best_bundle, model_path)
     joblib.dump(encoders, encoders_path)
