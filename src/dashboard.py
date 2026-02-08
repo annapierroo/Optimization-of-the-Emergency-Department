@@ -6,11 +6,11 @@ import os
 import holidays
 import joblib
 
-
-# Log-in configuration
+# --- AUTHENTICATION CONFIGURATION ---
 def psw_check():
     USER = "admin"
     PASSWORD = "ED_Opt26"
+    
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
@@ -21,28 +21,30 @@ def psw_check():
     user = st.text_input("Enter Username:")
     pwd = st.text_input("Enter Password:", type="password")
     
-
     if st.button("Login"):
         if user == USER and pwd == PASSWORD:
             st.session_state.authenticated = True
+            st.rerun()
         else:
-            st.error("Incorrect password. Try again.")
+            st.error("Incorrect password. Please try again.")
     st.stop()
 
-
 psw_check()
-# Page Configuration
+
+# --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Emergency Dept Dashboard", layout="wide")
 st.title("Emergency Department Optimization & AI Prediction")
 
 # --- 1. DATA LOADING FUNCTION ---
 @st.cache_data
 def load_data():
+    # Setup US Holidays
     holiday = holidays.USA()
 
     try:
-        # Load the CSV file using the correct separator
+        # Load the CSV file
         df = pd.read_csv("data/raw/EventLog.csv", sep=";")
+        
         # Data Cleaning
         df.columns = df.columns.str.strip()
         df['START'] = pd.to_datetime(df['START'], utc=True, errors='coerce')
@@ -66,13 +68,12 @@ def load_data():
             "STOP": dates + pd.to_timedelta(np.random.randint(10, 120, 500), unit='m')
         })
         is_real_data = False
-
-    df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
-    df['Waiting_Time_Mins'] = df['Waiting_Time_Mins'].clip(lower=0)
-    df['Arrival_Hour'] = df['START'].dt.hour
-    df['Day_Name'] = df['START'].dt.strftime('%A')
-    df['Year_Week'] = df['START'].dt.strftime('%Y - Week %U')
-
+        
+        # Re-apply calculations for simulated data
+        df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
+        df['Arrival_Hour'] = df['START'].dt.hour
+        df['Day_Name'] = df['START'].dt.strftime('%A')
+        df['Year_Week'] = df['START'].dt.strftime('%Y - Week %U')
 
     def holiday_day(dt):
         if dt in holiday:
@@ -126,6 +127,7 @@ if is_real_data:
 else:
     st.sidebar.warning("Using Simulated Data")
 
+# Filter by Day Type
 selected_day_type = st.sidebar.selectbox(
     "Type of day",
     ["All", "Weekday", "Weekend", "Holiday"]
@@ -144,7 +146,7 @@ input_hour = st.sidebar.slider("Arrival Hour", 0, 23, 10)
 # Prediction Logic
 if st.sidebar.button("Run Prediction"):
     
-    # 1. SIMPLE HEURISTIC FALLBACK (If model is missing, use historical average for that slot)
+    # 1. Fallback Heuristic: Use historical average if model is missing
     avg_wait = df[
         (df['Arrival_Hour'] == input_hour) & 
         (df['Day_Name'] == input_day)
@@ -170,6 +172,29 @@ col1, col2, col3 = st.columns(3)
 col1.metric("Total Patients", len(df_filtered))
 col2.metric("Avg Waiting Time", f"{df_filtered['Waiting_Time_Mins'].mean():.1f} min")
 col3.metric("AI Model Status", "Active" if model_status == "XGBoost" else "Demo Mode")
+
+st.markdown("---")
+
+# --- ALERT SYSTEM (INTEGRATED) ---
+# Logic to display alerts if waiting times exceed critical thresholds
+CRITICAL_THRESHOLD = 60.0 # Threshold in minutes
+
+if not df_filtered.empty:
+    current_avg = df_filtered['Waiting_Time_Mins'].mean()
+    
+    # Check if specific hours exceed the limit
+    hourly_check = df_filtered.groupby('Arrival_Hour')['Waiting_Time_Mins'].mean()
+    bottleneck_hours = hourly_check[hourly_check > CRITICAL_THRESHOLD]
+    
+    if current_avg > CRITICAL_THRESHOLD:
+        st.error(f"CRITICAL ALERT: Average waiting time is high ({current_avg:.1f} min). Immediate action required.")
+    
+    elif not bottleneck_hours.empty:
+        max_bottleneck = bottleneck_hours.max()
+        st.warning(f"BOTTLENECK DETECTED: Specific hours exceed {CRITICAL_THRESHOLD} mins (Max: {max_bottleneck:.1f} min). Please review the charts.")
+    
+    else:
+        st.success("STATUS OPTIMAL: Waiting times are within safety limits.")
 
 st.markdown("---")
 
@@ -205,7 +230,8 @@ if not df_filtered.empty:
         st.markdown("#### Hourly Bottlenecks")
         df_hourly = df_filtered.groupby('Arrival_Hour')['Waiting_Time_Mins'].mean().reset_index()
         fig2 = px.line(df_hourly, x='Arrival_Hour', y='Waiting_Time_Mins', markers=True)
-        fig2.add_hline(y=60, line_dash="dash", line_color="red", annotation_text="Limit")
+        # Critical threshold line
+        fig2.add_hline(y=CRITICAL_THRESHOLD, line_dash="dash", line_color="red", annotation_text="Limit (60m)")
         st.plotly_chart(fig2)
         
     with col_right:
