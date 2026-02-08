@@ -86,9 +86,10 @@ def load_data():
     df['Day_Type'] = df['START'].apply(holiday_day)
     return df, is_real_data
 
-# --- 2. AI MODEL LOADING FUNCTION ---
-def load_model():
-    # Attempt to load a trained model if it exists
+# --- 2. LOAD MODELS ---
+
+def load_waiting_time_model():
+    """Load XGBoost Regressor for waiting time."""
     model_path = "models/xgb_model.json" 
     if os.path.exists(model_path):
         try:
@@ -100,11 +101,26 @@ def load_model():
             return None, "Error"
     return None, "Missing"
 
+@st.cache_resource
+def load_next_activity_model():
+    """Load XGBoost Classifier and Encoder for next activity."""
+    try:
+        import xgboost as xgb
+        # Load Encoder
+        encoder = joblib.load("models/activity_encoder.pkl")
+        # Load Model
+        clf = xgb.XGBClassifier()
+        clf.load_model("models/next_activity_xgb.json")
+        return clf, encoder
+    except Exception:
+        return None, None
+
 # Load Resources
 df, is_real_data = load_data()
-model, model_status = load_model()
+model_wait, model_wait_status = load_waiting_time_model()
+model_next, encoder_next = load_next_activity_model()
 
-# --- SIDEBAR: CONTROL PANEL & PREDICTION ---
+# --- SIDEBAR: CONTROL PANEL ---
 st.sidebar.header("Control Panel")
 
 # A. Historical Filters
@@ -135,25 +151,24 @@ selected_day_type = st.sidebar.selectbox(
 if selected_day_type != "All":
     df_filtered = df_filtered[df_filtered['Day_Type'] == selected_day_type]
 
-# B. AI Prediction Simulator
 st.sidebar.markdown("---")
-st.sidebar.subheader("2. Prediction Simulator")
+
+# B. AI Simulator: Waiting Time
+st.sidebar.subheader("2. Prediction: Waiting Time")
 st.sidebar.info("Predict waiting time for a new patient.")
 
 input_day = st.sidebar.selectbox("Arrival Day", ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
 input_hour = st.sidebar.slider("Arrival Hour", 0, 23, 10)
 
-# Prediction Logic
-if st.sidebar.button("Run Prediction"):
-    
-    # 1. Fallback Heuristic: Use historical average if model is missing
+if st.sidebar.button("Predict Wait"):
+    # Fallback Heuristic
     avg_wait = df[
         (df['Arrival_Hour'] == input_hour) & 
         (df['Day_Name'] == input_day)
     ]['Waiting_Time_Mins'].mean()
     
     if pd.isna(avg_wait):
-        avg_wait = 30.0 # Default fallback
+        avg_wait = 30.0 
         
     predicted_value = avg_wait 
     
@@ -165,24 +180,61 @@ if st.sidebar.button("Run Prediction"):
     else:
         st.sidebar.write("Status: Normal")
 
+st.sidebar.markdown("---")
+
+# C. AI Simulator: Next Activity
+st.sidebar.subheader("3. Prediction: Next Step")
+st.sidebar.info("Predict the patient's next clinical activity.")
+
+if encoder_next:
+    # Use the same day/hour inputs from above
+    activity_list = sorted(encoder_next.classes_)
+    current_act = st.sidebar.selectbox("Current Activity", activity_list)
+    
+    if st.sidebar.button("Predict Next Step"):
+        # Map inputs
+        day_map = {'Monday':0, 'Tuesday':1, 'Wednesday':2, 'Thursday':3, 'Friday':4, 'Saturday':5, 'Sunday':6}
+        day_num = day_map.get(input_day, 0)
+        
+        # Prepare Data
+        try:
+            act_encoded = encoder_next.transform([current_act])[0]
+            X_new = pd.DataFrame([[act_encoded, input_hour, day_num]], 
+                                columns=['Current_Activity_Encoded', 'Hour', 'Day_of_Week'])
+            
+            # Predict
+            pred_idx = model_next.predict(X_new)[0]
+            pred_label = encoder_next.inverse_transform([pred_idx])[0]
+            
+            # Confidence
+            probs = model_next.predict_proba(X_new)
+            confidence = probs[0][pred_idx]
+            
+            st.sidebar.success(f"Next Step: **{pred_label}**")
+            st.sidebar.caption(f"Confidence: {confidence:.0%}")
+        except Exception as e:
+            st.sidebar.error(f"Prediction Error: {e}")
+else:
+    st.sidebar.warning("Next Activity Model not found. Run 'src/train_next_activity.py' first.")
+
+
 # --- MAIN DASHBOARD ---
 
 # KPIs
 col1, col2, col3 = st.columns(3)
 col1.metric("Total Patients", len(df_filtered))
 col2.metric("Avg Waiting Time", f"{df_filtered['Waiting_Time_Mins'].mean():.1f} min")
-col3.metric("AI Model Status", "Active" if model_status == "XGBoost" else "Demo Mode")
+col3.metric("AI Models Status", "Active" if model_wait_status == "XGBoost" and encoder_next else "Partial/Demo")
 
 st.markdown("---")
 
-# --- ALERT SYSTEM (INTEGRATED) ---
-# Logic to display alerts if waiting times exceed critical thresholds
+# --- ALERT SYSTEM ---
 CRITICAL_THRESHOLD = 60.0 # Threshold in minutes
 
 if not df_filtered.empty:
     current_avg = df_filtered['Waiting_Time_Mins'].mean()
     
-    # Check if specific hours exceed the limit
+    # Check hourly bottlenecks
     hourly_check = df_filtered.groupby('Arrival_Hour')['Waiting_Time_Mins'].mean()
     bottleneck_hours = hourly_check[hourly_check > CRITICAL_THRESHOLD]
     
