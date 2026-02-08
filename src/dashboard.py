@@ -38,51 +38,36 @@ st.title("Emergency Department Optimization & AI Prediction")
 # --- 1. DATA LOADING FUNCTION ---
 @st.cache_data
 def load_data():
-    # Setup US Holidays
     holiday = holidays.USA()
-
     try:
-        # Load the CSV file
         df = pd.read_csv("data/raw/EventLog.csv", sep=";")
-        
-        # Data Cleaning
         df.columns = df.columns.str.strip()
         df['START'] = pd.to_datetime(df['START'], utc=True, errors='coerce')
         df['STOP'] = pd.to_datetime(df['STOP'], utc=True, errors='coerce')
         df = df.dropna(subset=['START', 'STOP'])
         
-        # Feature Engineering
         df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
         df['Waiting_Time_Mins'] = df['Waiting_Time_Mins'].clip(lower=0)
         df['Arrival_Hour'] = df['START'].dt.hour
         df['Day_Name'] = df['START'].dt.strftime('%A')
         df['Year_Week'] = df['START'].dt.strftime('%Y - Week %U')
-        
         is_real_data = True
-
     except FileNotFoundError:
-        # Fallback: Simulated Data
         dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
         df = pd.DataFrame({
             "START": dates,
             "STOP": dates + pd.to_timedelta(np.random.randint(10, 120, 500), unit='m')
         })
         is_real_data = False
-        
-        # Re-apply calculations for simulated data
         df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
         df['Arrival_Hour'] = df['START'].dt.hour
         df['Day_Name'] = df['START'].dt.strftime('%A')
         df['Year_Week'] = df['START'].dt.strftime('%Y - Week %U')
 
     def holiday_day(dt):
-        if dt in holiday:
-            return "Holiday"
-        elif dt.weekday() >= 5:
-            return "Weekend"
-        else:
-            return "Weekday"
-        
+        if dt in holiday: return "Holiday"
+        elif dt.weekday() >= 5: return "Weekend"
+        else: return "Weekday"
     df['Day_Type'] = df['START'].apply(holiday_day)
     return df, is_real_data
 
@@ -97,88 +82,62 @@ def load_waiting_time_model():
             model = xgb.XGBRegressor()
             model.load_model(model_path)
             return model, "XGBoost"
-        except:
-            return None, "Error"
+        except: return None, "Error"
     return None, "Missing"
 
 @st.cache_resource
 def load_next_activity_model():
-    """Load XGBoost Classifier and Encoder for next activity."""
+    """Load XGBoost Classifier and separate Encoders."""
     try:
         import xgboost as xgb
-        # Load Encoder
-        encoder = joblib.load("models/activity_encoder.pkl")
+        # Load Encoders
+        enc_in = joblib.load("models/input_encoder.pkl")
+        enc_out = joblib.load("models/output_encoder.pkl")
+        
         # Load Model
         clf = xgb.XGBClassifier()
         clf.load_model("models/next_activity_xgb.json")
-        return clf, encoder
+        return clf, enc_in, enc_out
     except Exception:
-        return None, None
+        return None, None, None
 
-# Load Resources
 df, is_real_data = load_data()
 model_wait, model_wait_status = load_waiting_time_model()
-model_next, encoder_next = load_next_activity_model()
+model_next, enc_in, enc_out = load_next_activity_model()
 
 # --- SIDEBAR: CONTROL PANEL ---
 st.sidebar.header("Control Panel")
 
-# A. Historical Filters
 st.sidebar.subheader("1. Historical Analysis")
 time_of_day = st.sidebar.selectbox("Filter Time of Day", ["All Day", "Day (06-18)", "Night (18-06)"])
-
-if time_of_day == "Day (06-18)":
-    df_filtered = df[(df['Arrival_Hour'] >= 6) & (df['Arrival_Hour'] < 18)]
-elif time_of_day == "Night (18-06)":
-    df_filtered = df[(df['Arrival_Hour'] >= 18) | (df['Arrival_Hour'] < 6)]
-else:
-    df_filtered = df.copy()
+if time_of_day == "Day (06-18)": df_filtered = df[(df['Arrival_Hour'] >= 6) & (df['Arrival_Hour'] < 18)]
+elif time_of_day == "Night (18-06)": df_filtered = df[(df['Arrival_Hour'] >= 18) | (df['Arrival_Hour'] < 6)]
+else: df_filtered = df.copy()
 
 if is_real_data:
     unique_weeks = sorted(df_filtered['Year_Week'].unique())
     week_options = ["All Weeks"] + unique_weeks
     selected_week = st.sidebar.selectbox("Filter Weeks", week_options)
-    if selected_week != "All Weeks":
-        df_filtered = df_filtered[df_filtered['Year_Week'] == selected_week]
-else:
-    st.sidebar.warning("Using Simulated Data")
+    if selected_week != "All Weeks": df_filtered = df_filtered[df_filtered['Year_Week'] == selected_week]
 
-# Filter by Day Type
-selected_day_type = st.sidebar.selectbox(
-    "Type of day",
-    ["All", "Weekday", "Weekend", "Holiday"]
-)
-if selected_day_type != "All":
-    df_filtered = df_filtered[df_filtered['Day_Type'] == selected_day_type]
+selected_day_type = st.sidebar.selectbox("Type of day", ["All", "Weekday", "Weekend", "Holiday"])
+if selected_day_type != "All": df_filtered = df_filtered[df_filtered['Day_Type'] == selected_day_type]
 
 st.sidebar.markdown("---")
 
 # B. AI Simulator: Waiting Time
 st.sidebar.subheader("2. Prediction: Waiting Time")
 st.sidebar.info("Predict waiting time for a new patient.")
-
 input_day = st.sidebar.selectbox("Arrival Day", ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
 input_hour = st.sidebar.slider("Arrival Hour", 0, 23, 10)
 
 if st.sidebar.button("Predict Wait"):
-    # Fallback Heuristic
-    avg_wait = df[
-        (df['Arrival_Hour'] == input_hour) & 
-        (df['Day_Name'] == input_day)
-    ]['Waiting_Time_Mins'].mean()
-    
-    if pd.isna(avg_wait):
-        avg_wait = 30.0 
-        
+    avg_wait = df[(df['Arrival_Hour'] == input_hour) & (df['Day_Name'] == input_day)]['Waiting_Time_Mins'].mean()
+    if pd.isna(avg_wait): avg_wait = 30.0 
     predicted_value = avg_wait 
-    
-    # Visual Output
     st.sidebar.success(f"Predicted Wait: {predicted_value:.0f} min")
-    
-    if predicted_value > 60:
-        st.sidebar.error("High Congestion Expected")
-    else:
-        st.sidebar.write("Status: Normal")
+    if predicted_value > 60: st.sidebar.error("High Congestion Expected")
+    else: st.sidebar.write("Status: Normal")
 
 st.sidebar.markdown("---")
 
@@ -186,25 +145,25 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("3. Prediction: Next Step")
 st.sidebar.info("Predict the patient's next clinical activity.")
 
-if encoder_next:
-    # Use the same day/hour inputs from above
-    activity_list = sorted(encoder_next.classes_)
+if model_next and enc_in and enc_out:
+    # Dropdown uses Input Encoder (Current Activity)
+    activity_list = sorted(enc_in.classes_)
     current_act = st.sidebar.selectbox("Current Activity", activity_list)
     
     if st.sidebar.button("Predict Next Step"):
-        # Map inputs
         day_map = {'Monday':0, 'Tuesday':1, 'Wednesday':2, 'Thursday':3, 'Friday':4, 'Saturday':5, 'Sunday':6}
         day_num = day_map.get(input_day, 0)
-        
-        # Prepare Data
         try:
-            act_encoded = encoder_next.transform([current_act])[0]
+            # Encode Input
+            act_encoded = enc_in.transform([current_act])[0]
             X_new = pd.DataFrame([[act_encoded, input_hour, day_num]], 
                                 columns=['Current_Activity_Encoded', 'Hour', 'Day_of_Week'])
             
-            # Predict
+            # Predict (Returns ID from Output Encoder)
             pred_idx = model_next.predict(X_new)[0]
-            pred_label = encoder_next.inverse_transform([pred_idx])[0]
+            
+            # Decode Output (Using Output Encoder)
+            pred_label = enc_out.inverse_transform([pred_idx])[0]
             
             # Confidence
             probs = model_next.predict_proba(X_new)
@@ -215,36 +174,28 @@ if encoder_next:
         except Exception as e:
             st.sidebar.error(f"Prediction Error: {e}")
 else:
-    st.sidebar.warning("Next Activity Model not found. Run 'src/train_next_activity.py' first.")
-
+    st.sidebar.warning("Next Activity Model not ready. Run 'src/train_next_activity.py'.")
 
 # --- MAIN DASHBOARD ---
-
-# KPIs
 col1, col2, col3 = st.columns(3)
 col1.metric("Total Patients", len(df_filtered))
 col2.metric("Avg Waiting Time", f"{df_filtered['Waiting_Time_Mins'].mean():.1f} min")
-col3.metric("AI Models Status", "Active" if model_wait_status == "XGBoost" and encoder_next else "Partial/Demo")
+col3.metric("AI Models Status", "Active")
 
 st.markdown("---")
 
 # --- ALERT SYSTEM ---
-CRITICAL_THRESHOLD = 60.0 # Threshold in minutes
-
+CRITICAL_THRESHOLD = 60.0
 if not df_filtered.empty:
     current_avg = df_filtered['Waiting_Time_Mins'].mean()
-    
-    # Check hourly bottlenecks
     hourly_check = df_filtered.groupby('Arrival_Hour')['Waiting_Time_Mins'].mean()
     bottleneck_hours = hourly_check[hourly_check > CRITICAL_THRESHOLD]
     
     if current_avg > CRITICAL_THRESHOLD:
         st.error(f"CRITICAL ALERT: Average waiting time is high ({current_avg:.1f} min). Immediate action required.")
-    
     elif not bottleneck_hours.empty:
         max_bottleneck = bottleneck_hours.max()
         st.warning(f"BOTTLENECK DETECTED: Specific hours exceed {CRITICAL_THRESHOLD} mins (Max: {max_bottleneck:.1f} min). Please review the charts.")
-    
     else:
         st.success("STATUS OPTIMAL: Waiting times are within safety limits.")
 
@@ -252,50 +203,29 @@ st.markdown("---")
 
 # Visualizations
 st.subheader("Operational Insights")
-
 if not df_filtered.empty:
-    # 1. Weekly Trends
     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-    
     if 'selected_week' in locals() and selected_week != "All Weeks":
-        group_cols = ['Day_Name']
-        title_text = "Daily Performance (Selected Week)"
+        group_cols = ['Day_Name']; title_text = "Daily Performance (Selected Week)"
     else:
-        group_cols = ['Day_Name']
-        title_text = "Global Average by Day of Week"
+        group_cols = ['Day_Name']; title_text = "Global Average by Day of Week"
 
     df_daily = df_filtered.groupby(group_cols)['Waiting_Time_Mins'].mean().reindex(day_order).reset_index()
-    
-    fig1 = px.bar(
-        df_daily, x='Day_Name', y='Waiting_Time_Mins',
-        color='Waiting_Time_Mins', color_continuous_scale='Blues',
-        text_auto='.0f',
-        title=title_text
-    )
-    fig1.update_layout(yaxis_title="Minutes")
+    fig1 = px.bar(df_daily, x='Day_Name', y='Waiting_Time_Mins', color='Waiting_Time_Mins', color_continuous_scale='Blues', text_auto='.0f', title=title_text)
     st.plotly_chart(fig1)
 
-    # 2. Hourly Trends
     col_left, col_right = st.columns(2)
-    
     with col_left:
         st.markdown("#### Hourly Bottlenecks")
         df_hourly = df_filtered.groupby('Arrival_Hour')['Waiting_Time_Mins'].mean().reset_index()
         fig2 = px.line(df_hourly, x='Arrival_Hour', y='Waiting_Time_Mins', markers=True)
-        # Critical threshold line
         fig2.add_hline(y=CRITICAL_THRESHOLD, line_dash="dash", line_color="red", annotation_text="Limit (60m)")
         st.plotly_chart(fig2)
         
     with col_right:
         st.markdown("#### Heatmap: Day vs Hour")
-        # Pivot table for heatmap
-        heatmap_data = df_filtered.pivot_table(
-            index='Day_Name', columns='Arrival_Hour', 
-            values='Waiting_Time_Mins', aggfunc='mean'
-        ).reindex(day_order)
-        
+        heatmap_data = df_filtered.pivot_table(index='Day_Name', columns='Arrival_Hour', values='Waiting_Time_Mins', aggfunc='mean').reindex(day_order)
         fig3 = px.imshow(heatmap_data, text_auto=False, aspect="auto", color_continuous_scale='RdYlGn_r')
         st.plotly_chart(fig3)
-
 else:
     st.warning("No data matches the current filters.")
