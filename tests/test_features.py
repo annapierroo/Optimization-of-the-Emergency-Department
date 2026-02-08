@@ -90,6 +90,12 @@ def test__build_waiting_time_features():
     assert "Waiting_Time_Mins" in features.columns
     assert "Day_Index" in features.columns
     assert "Arrival_Hour" in features.columns
+    assert "duration_hours" in features.columns
+    assert "duration_hours_capped" in features.columns
+    assert "start_day_of_week" in features.columns
+    assert "time_of_day" in features.columns
+    assert "DESCRIPTION" in features.columns
+    assert "REASONDESCRIPTION" in features.columns
     assert features["Waiting_Time_Mins"].iloc[0] == 60
 
 

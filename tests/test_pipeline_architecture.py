@@ -64,3 +64,4 @@ def test_default_pipeline_build_features_creates_output(tmp_path, monkeypatch):
     assert output_path.exists()
     df = pd.read_csv(output_path)
     assert {"Waiting_Time_Mins", "Day_Index", "Arrival_Hour"}.issubset(df.columns)
+    assert {"duration_hours", "duration_hours_capped", "DESCRIPTION", "REASONDESCRIPTION"}.issubset(df.columns)
