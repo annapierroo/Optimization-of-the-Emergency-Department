@@ -7,7 +7,7 @@ import pm4py
 import holidays
 from graphviz import Source
 from pm4py.visualization.dfg import visualizer as dfg_visualizer
-from utils import timer
+from timer import Timer
 
 PROCESSED_DATA_PATH = "data/processed/patient_journey_log.csv"
 OUTPUT_DIR = "reports/figures"
@@ -94,7 +94,7 @@ def plot_ecdf_minutes(groups: dict, title: str, output_path: str):
     plt.close()
 
 def discover_process():
-    timer = timer()
+    timer = Timer()
 
     timer.start("Ingestion")
     try:

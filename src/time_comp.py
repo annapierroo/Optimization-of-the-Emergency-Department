@@ -22,3 +22,6 @@ class Timer :
         print("\n[TIMER SUMMARY]")
         for label, duration in self.durations.items():
             print(f"{label}: {duration:.2f}s")
+
+if __name__ == "__main__":
+    timer = Timer()    
