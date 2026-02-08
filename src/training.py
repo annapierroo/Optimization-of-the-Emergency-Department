@@ -13,10 +13,17 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 from dataclasses import dataclass, field  # <--- AGGIUNTO 'field'
 from pathlib import Path
+from typing import Protocol
 
 from .config import PipelineConfig, default_config
 
 logger = logging.getLogger(__name__)
+
+class ModelTrainerPort(Protocol):
+    """Interface used by pipeline orchestration for trainer components."""
+
+    def train_model(self) -> None:
+        """Execute model training workflow."""
 
 def load_feature_table(config: PipelineConfig) -> pd.DataFrame:
     """Load engineered features from disk."""

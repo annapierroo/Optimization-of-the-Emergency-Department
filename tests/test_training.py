@@ -1,6 +1,7 @@
+from pathlib import Path
+
 import pandas as pd
 import pytest
-from pathlib import Path
 
 from src import training
 from src.config import PipelineConfig
@@ -18,119 +19,122 @@ def _make_config(tmp_path: Path) -> PipelineConfig:
         model_dir=tmp_path / "artifacts" / "models",
         model_filename="xgb_model.json",
         metrics_filename="metrics.json",
-        test_size=0.2,
+        test_size=0.25,
         random_state=42,
         reports_dir=tmp_path / "reports",
     )
 
 
-@pytest.mark.xfail(strict=False, reason="Pending implementation")
-def test_load_feature_table_reads_features():
-    """
-    Loads feature table from `encounter_features.parquet`.
-    Inputs: PipelineConfig with `feature_store_dir`.
-    Outputs: DataFrame with `encounter_duration_minutes` column and expected row count.
-    """
-    tmp_path = Path("/tmp/test_training_load_features")
+def test_load_feature_table_reads_features(tmp_path: Path, monkeypatch):
     config = _make_config(tmp_path)
-    features_path = config.feature_store_dir / config.features_filename
-    features_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame({"encounter_duration_minutes": [10, 20]}).to_parquet(features_path)
+    feature_path = config.feature_store_dir / config.features_filename
 
-    df = training.load_feature_table(config)
-    assert "encounter_duration_minutes" in df.columns
-    assert len(df) == 2
-
-
-@pytest.mark.xfail(strict=False, reason="Pending implementation")
-def test_split_train_val_uses_chronological_split():
-    """
-    Splits rows by time so validation uses newest records.
-    Inputs: DataFrame with `encounter_start` and target, `val_fraction`.
-    Outputs: train_df, val_df with val timestamps strictly after train timestamps.
-    """
-    df = pd.DataFrame(
+    expected = pd.DataFrame(
         {
-            "encounter_start": pd.to_datetime(
-                ["2020-01-01", "2020-01-02", "2020-01-03", "2020-01-04"]
-            ),
-            "encounter_duration_minutes": [10, 20, 30, 40],
+            "Waiting_Time_Mins": [10.0, 20.0],
+            "Day_Index": [1, 2],
+            "Arrival_Hour": [9, 10],
         }
     )
-    train_df, val_df = training.split_train_val(df, time_column="encounter_start", val_fraction=0.25)
-    assert len(train_df) == 3
-    assert len(val_df) == 1
-    assert val_df["encounter_start"].min() > train_df["encounter_start"].max()
+
+    monkeypatch.setattr(training.os.path, "exists", lambda p: str(p) == str(feature_path))
+    monkeypatch.setattr(training.pd, "read_parquet", lambda _: expected.copy())
+
+    result = training.load_feature_table(config)
+    assert len(result) == 2
+    assert {"Waiting_Time_Mins", "Day_Index", "Arrival_Hour"}.issubset(result.columns)
 
 
-@pytest.mark.xfail(strict=False, reason="Pending implementation")
-def test_train_baseline_model_returns_fitted_model():
-    """
-    Trains baseline model on feature columns and target.
-    Inputs: DataFrame with features and `encounter_duration_minutes`.
-    Outputs: model object exposing `predict`.
-    """
+def test_load_feature_table_validates_required_columns(tmp_path: Path, monkeypatch):
+    config = _make_config(tmp_path)
+    monkeypatch.setattr(training.os.path, "exists", lambda _: True)
+    monkeypatch.setattr(training.pd, "read_parquet", lambda _: pd.DataFrame({"Waiting_Time_Mins": [1.0]}))
+
+    with pytest.raises(ValueError):
+        training.load_feature_table(config)
+
+
+def test_split_train_val_splits_data(tmp_path: Path):
+    config = _make_config(tmp_path)
     df = pd.DataFrame(
         {
-            "encounter_duration_minutes": [10, 20, 30],
-            "proc_count__a": [1, 0, 1],
+            "Day_Index": [0, 1, 2, 3],
+            "Arrival_Hour": [8, 9, 10, 11],
+            "Waiting_Time_Mins": [15.0, 20.0, 25.0, 30.0],
         }
     )
-    model = training.train_baseline_model(df, target_column="encounter_duration_minutes")
-    assert hasattr(model, "predict")
+
+    x_train, x_test, y_train, y_test = training.split_train_val(df, config)
+    assert len(x_train) + len(x_test) == len(df)
+    assert len(y_train) + len(y_test) == len(df)
+    assert list(x_train.columns) == ["Day_Index", "Arrival_Hour"]
 
 
-@pytest.mark.xfail(strict=False, reason="Pending implementation")
-def test_evaluate_model_returns_metrics():
-    """
-    Compute evaluation metrics on validation data.
-    Inputs: model with `predict`, validation DataFrame with target column.
-    Outputs: metrics dict containing mae (and optionally other metrics).
-    """
+def test_train_baseline_model_returns_fitted_model(tmp_path: Path, monkeypatch):
+    config = _make_config(tmp_path)
+    x_train = pd.DataFrame({"Day_Index": [1, 2], "Arrival_Hour": [9, 10]})
+    y_train = pd.Series([10.0, 20.0])
+
+    class FakeRegressor:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.fit_called = False
+
+        def fit(self, x, y):
+            self.fit_called = True
+            self.x = x
+            self.y = y
+            return self
+
+    monkeypatch.setattr(training.xgb, "XGBRegressor", FakeRegressor)
+    model = training.train_baseline_model(x_train, y_train, config)
+
+    assert model.fit_called is True
+    assert model.kwargs["random_state"] == config.random_state
+
+
+def test_evaluate_model_returns_mae():
+    class DummyModel:
+        def predict(self, x):
+            return [10.0 for _ in range(len(x))]
+
+    x_test = pd.DataFrame({"Day_Index": [1, 2], "Arrival_Hour": [9, 10]})
+    y_test = pd.Series([10.0, 20.0])
+
+    metrics = training.evaluate_model(DummyModel(), x_test, y_test)
+    assert "mae" in metrics
+    assert metrics["mae"] == pytest.approx(5.0)
+
+
+def test_save_artifacts_writes_model_and_metrics(tmp_path: Path):
+    config = _make_config(tmp_path)
 
     class DummyModel:
-        def predict(self, X):
-            return [10] * len(X)
+        def save_model(self, path):
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text("model", encoding="utf-8")
 
-    df = pd.DataFrame(
-        {
-            "encounter_duration_minutes": [10, 20],
-            "proc_count__a": [1, 0],
-        }
+    artifacts = training.save_artifacts(config, DummyModel(), {"mae": 1.23})
+    assert Path(artifacts["model_path"]).exists()
+    assert Path(artifacts["metrics_path"]).exists()
+
+
+def test_default_trainer_orchestrates_pipeline(tmp_path: Path, monkeypatch):
+    config = _make_config(tmp_path)
+    call_order = []
+
+    monkeypatch.setattr(training, "load_feature_table", lambda *_: call_order.append("load") or pd.DataFrame())
+    monkeypatch.setattr(
+        training,
+        "split_train_val",
+        lambda *_: call_order.append("split")
+        or (pd.DataFrame(), pd.DataFrame(), pd.Series(dtype=float), pd.Series(dtype=float)),
     )
-    metrics = training.evaluate_model(DummyModel(), df, target_column="encounter_duration_minutes")
-    assert "mae" in metrics
-
-
-@pytest.mark.xfail(strict=False, reason="Pending implementation")
-def test_save_artifacts_writes_outputs():
-    """
-    Persist model and metrics under `artifacts/models`.
-    Inputs: PipelineConfig, model object, metrics dict.
-    Outputs: dict of artifact paths; files exist on disk.
-    """
-    tmp_path = Path("/tmp/test_training_save_artifacts")
-    config = _make_config(tmp_path)
-    artifacts = training.save_artifacts(config, model=object(), metrics={"mae": 1.0})
-    assert isinstance(artifacts, dict)
-    assert any(config.model_dir in Path(path).parents or Path(path) == config.model_dir for path in artifacts.values())
-
-
-@pytest.mark.xfail(strict=False, reason="Pending implementation")
-def test_default_trainer_orchestrates_pipeline(monkeypatch):
-    """
-    Description: ensure trainer calls load -> split -> train -> evaluate -> save in order.
-    Inputs: PipelineConfig, monkeypatched functions.
-    Outputs: no exception; returned artifact metadata if implemented.
-    """
-    tmp_path = Path("/tmp/test_training_orchestrator")
-    config = _make_config(tmp_path)
-
-    monkeypatch.setattr(training, "load_feature_table", lambda *_: pd.DataFrame())
-    monkeypatch.setattr(training, "split_train_val", lambda *_: (pd.DataFrame(), pd.DataFrame()))
-    monkeypatch.setattr(training, "train_baseline_model", lambda *_: object())
-    monkeypatch.setattr(training, "evaluate_model", lambda *_: {"mae": 0.0})
-    monkeypatch.setattr(training, "save_artifacts", lambda *_: {"model": str(config.model_dir / "model.pkl")})
+    monkeypatch.setattr(training, "train_baseline_model", lambda *_: call_order.append("train") or object())
+    monkeypatch.setattr(training, "evaluate_model", lambda *_: call_order.append("evaluate") or {"mae": 0.0})
+    monkeypatch.setattr(training, "save_artifacts", lambda *_: call_order.append("save") or {})
 
     trainer = training.DefaultModelTrainer(config=config)
     trainer.train_model()
+
+    assert call_order == ["load", "split", "train", "evaluate", "save"]
