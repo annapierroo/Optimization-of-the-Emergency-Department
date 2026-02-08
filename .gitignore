@@ -210,3 +210,5 @@ reports/figures/*.png
 reports/figures/*.svg
 reports/figures/*.
 data/raw/Hospital+Patient+Records.xlsx
+
+uploads/
