@@ -9,3 +9,4 @@ holidays
 streamlit
 xgboost
 plotly
+timer
