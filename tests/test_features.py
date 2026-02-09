@@ -4,29 +4,33 @@ from pathlib import Path
 
 from src.config import PipelineConfig
 from src.features import (
-    FEATURES_FILENAME,
-    PROCESSED_FILENAME,
+    _build_waiting_time_features,
     _load_events,
-    _procedure_matrix,
     _save_features,
-    _summarize_encounter_duration,
 )
 
 
 def _make_config(tmp_path: Path) -> PipelineConfig:
     return PipelineConfig(
         project_root=tmp_path,
+        data_path=tmp_path / "data" / "raw" / "EventLog.csv",
         raw_data_dir=tmp_path / "data" / "raw",
         processed_data_dir=tmp_path / "data" / "processed",
+        processed_filename="patient_journey_log.csv",
         feature_store_dir=tmp_path / "data" / "features",
+        features_filename="encounter_features.parquet",
         model_dir=tmp_path / "artifacts" / "models",
+        model_filename="xgb_model.json",
+        metrics_filename="metrics.json",
+        test_size=0.2,
+        random_state=42,
         reports_dir=tmp_path / "reports",
     )
 
 
 def _write_processed(tmp_path: Path, rows: list[dict]) -> Path:
     config = _make_config(tmp_path)
-    processed_path = config.processed_data_dir / PROCESSED_FILENAME
+    processed_path = config.processed_data_dir / config.processed_filename
     processed_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(processed_path, index=False)
     return processed_path
@@ -54,7 +58,7 @@ def test__load_events_parses_timestamps(tmp_path: Path):
         },
     ]
     config = _make_config(tmp_path)
-    processed_path = config.processed_data_dir / PROCESSED_FILENAME
+    processed_path = config.processed_data_dir / config.processed_filename
     processed_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(processed_path, index=False)
 
@@ -64,7 +68,7 @@ def test__load_events_parses_timestamps(tmp_path: Path):
     assert events["end:timestamp"].dt.tz is not None
 
 
-def test__summarize_encounter_duration_positive():
+def test__build_waiting_time_features():
     df = pd.DataFrame(
         [
             {
@@ -81,30 +85,24 @@ def test__summarize_encounter_duration_positive():
             },
         ]
     )
-    summary = _summarize_encounter_duration(df)
-    assert summary.loc["enc_a", "event_count"] == 2
-    assert summary.loc["enc_a", "encounter_duration_minutes"] == 120
-
-
-def test__procedure_matrix_counts_topk():
-    df = pd.DataFrame(
-        [
-            {"case:concept:name": "enc_a", "concept:name": "proc_a"},
-            {"case:concept:name": "enc_a", "concept:name": "proc_a"},
-            {"case:concept:name": "enc_a", "concept:name": "proc_b"},
-            {"case:concept:name": "enc_b", "concept:name": "proc_b"},
-        ]
-    )
-    matrix = _procedure_matrix(df, top_k=2)
-    assert "proc_count__proc_a" in matrix.columns
-    assert matrix.loc["enc_a", "proc_count__proc_a"] == 2
-    assert matrix.loc["enc_b", "proc_count__proc_a"] == 0
+    features = _build_waiting_time_features(df)
+    assert len(features) == 2
+    assert "Waiting_Time_Mins" in features.columns
+    assert "Day_Index" in features.columns
+    assert "Arrival_Hour" in features.columns
+    assert "duration_hours" in features.columns
+    assert "duration_hours_capped" in features.columns
+    assert "start_day_of_week" in features.columns
+    assert "time_of_day" in features.columns
+    assert "DESCRIPTION" in features.columns
+    assert "REASONDESCRIPTION" in features.columns
+    assert features["Waiting_Time_Mins"].iloc[0] == 60
 
 
 def test__save_features_writes_parquet(tmp_path: Path, monkeypatch):
     config = _make_config(tmp_path)
     features = pd.DataFrame(
-        {"encounter_duration_minutes": [60, 30], "total_hours": [1, 0.5]},
+        {"Waiting_Time_Mins": [60, 30], "Day_Index": [1, 2], "Arrival_Hour": [9, 10]},
         index=["enc_a", "enc_b"],
     )
 
@@ -116,4 +114,4 @@ def test__save_features_writes_parquet(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(pd.DataFrame, "to_parquet", fake_to_parquet, raising=False)
     output_path = _save_features(config, features)
     assert output_path.exists()
-    assert output_path.name == FEATURES_FILENAME
+    assert output_path.name == config.features_filename

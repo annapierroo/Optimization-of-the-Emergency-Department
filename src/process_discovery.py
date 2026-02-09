@@ -9,18 +9,19 @@ from graphviz import Source
 from pm4py.visualization.dfg import visualizer as dfg_visualizer
 from time_comp import Timer
 
-PROCESSED_DATA_PATH = "data/processed/patient_journey_log.csv"
+DATA_VERSION = "1.0"
+PROCESSED_DATA_PATH = f"data/processed/v{DATA_VERSION}/patient_journey_log.csv"
 OUTPUT_DIR = "reports/figures"
-OUTPUT_IMG_PATH = "reports/figures/patient_journey_dfg.png"
+OUTPUT_IMG_PATH = f"reports/figures/v{DATA_VERSION}/patient_journey_dfg.png"
 
-WAITING_CSV = "reports/waiting_transitions.csv"
-WAITING_BOXPLOT_WEEKEND = "reports/figures/waiting_weekday_vs_weekend_boxplot.png"
-WAITING_BOXPLOT_DAYTYPE = "reports/figures/waiting_holiday_weekend_weekday_boxplot.png"
-WAITING_ECDF_WEEKEND = "reports/figures/waiting_weekday_vs_weekend_ecdf.png"
-WAITING_ECDF_DAYTYPE = "reports/figures/waiting_holiday_weekend_weekday_ecdf.png"
-WAITING_BOXPLOT_DAYNIGHT = "reports/figures/waiting_day_vs_night_boxplot.png"
-WAITING_ECDF_DAYNIGHT = "reports/figures/waiting_day_vs_night_ecdf.png"
-OUTPUT_IMG_PATH_TIME = "reports/figures/patient_journey_dfg_time.png"
+WAITING_CSV = f"reports/v{DATA_VERSION}/waiting_transitions.csv"
+WAITING_BOXPLOT_WEEKEND = f"reports/figures/v{DATA_VERSION}/waiting_weekday_vs_weekend_boxplot.png"
+WAITING_BOXPLOT_DAYTYPE = f"reports/figures/v{DATA_VERSION}/waiting_holiday_weekend_weekday_boxplot.png"
+WAITING_ECDF_WEEKEND = f"reports/figures/v{DATA_VERSION}/waiting_weekday_vs_weekend_ecdf.png"
+WAITING_ECDF_DAYTYPE = f"reports/figures/v{DATA_VERSION}/waiting_holiday_weekend_weekday_ecdf.png"
+WAITING_BOXPLOT_DAYNIGHT = f"reports/figures/v{DATA_VERSION}/waiting_day_vs_night_boxplot.png"
+WAITING_ECDF_DAYNIGHT = f"reports/figures/v{DATA_VERSION}/waiting_day_vs_night_ecdf.png"
+OUTPUT_IMG_PATH_TIME = f"reports/figures/v{DATA_VERSION}/patient_journey_dfg_time.png"
 
 MAX_TIME_SECONDS = 20.0
 
@@ -40,10 +41,6 @@ def littledata_warning(groups: dict, min_count : int, plot_name: str):
             skip = True
         else:
             valid_groups[name] = v
-        if len(v) < min_count:
-            warnings.warn(f"Group '{name}' has only {len(v)} valid waiting time entries, which may lead to unreliable results in {plot_name}.")
-            skip = True
-
         return valid_groups, skip
     
 # Boxplot on log1p scale 
@@ -93,7 +90,7 @@ def plot_ecdf_minutes(groups: dict, title: str, output_path: str):
     plt.savefig(output_path)
     plt.close()
 
-def discover_process():
+def discover_process(version):
     timer = Timer()
 
     timer.start("Ingestion")
@@ -364,4 +361,4 @@ def discover_process():
 
 
 if __name__ == "__main__":
-    discover_process()
+    discover_process(DATA_VERSION)

@@ -2,7 +2,11 @@ import pandas as pd
 import sys
 import os
 import warnings
-from time_comp import Timer
+
+try:
+    from .time_comp import Timer
+except ImportError:
+    from time_comp import Timer
 
 DATA_VERSION = "1.0"
 RAW_DATA_PATH = f"data/snapshots/v{DATA_VERSION}/EventLog.csv"
