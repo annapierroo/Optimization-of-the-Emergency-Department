@@ -41,7 +41,8 @@ def _install_ml_stubs(monkeypatch: pytest.MonkeyPatch):
             return self
 
         def predict(self, x):
-            return [self._pred for _ in range(len(x))]
+            index = x.index if hasattr(x, "index") else None
+            return pd.Series([self._pred for _ in range(len(x))], index=index)
 
         def save_model(self, path: str):
             target = Path(path)
@@ -119,7 +120,8 @@ def _install_ml_stubs(monkeypatch: pytest.MonkeyPatch):
             return self
 
         def predict(self, x):
-            return [self._pred for _ in range(len(x))]
+            index = x.index if hasattr(x, "index") else None
+            return pd.Series([self._pred for _ in range(len(x))], index=index)
 
     class TreeRegressor:
         def __init__(self, **kwargs):
@@ -131,7 +133,8 @@ def _install_ml_stubs(monkeypatch: pytest.MonkeyPatch):
             return self
 
         def predict(self, x):
-            return [self._pred for _ in range(len(x))]
+            index = x.index if hasattr(x, "index") else None
+            return pd.Series([self._pred for _ in range(len(x))], index=index)
 
     sklearn_module = types.ModuleType("sklearn")
     model_selection_module = types.ModuleType("sklearn.model_selection")
@@ -286,6 +289,11 @@ def test_default_trainer_orchestrates_pipeline(tmp_path: Path, monkeypatch):
 def test_train_next_activity_saves_artifacts(tmp_path: Path, monkeypatch):
     _install_ml_stubs(monkeypatch)
     train_next_activity = _import_module("src.train_next_activity")
+    monkeypatch.setattr(
+        train_next_activity.joblib,
+        "dump",
+        lambda _obj, path: Path(path).write_text("stub-encoder", encoding="utf-8"),
+    )
 
     config = _make_config(tmp_path)
     feature_path = config.feature_store_dir / config.features_filename
@@ -371,6 +379,11 @@ def test_prepare_los_dataset_returns_matrix_and_target(monkeypatch):
 def test_train_los_models_writes_artifacts(tmp_path: Path, monkeypatch):
     _install_ml_stubs(monkeypatch)
     train_los_models = _import_module("src.train_los_models")
+    monkeypatch.setattr(
+        train_los_models.joblib,
+        "dump",
+        lambda _obj, path: Path(path).write_text("stub-artifact", encoding="utf-8"),
+    )
 
     config = _make_config(tmp_path)
     feature_path = config.feature_store_dir / config.features_filename

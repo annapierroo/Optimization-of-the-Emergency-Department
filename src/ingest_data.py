@@ -2,7 +2,11 @@ import pandas as pd
 import sys
 import os
 import warnings
-from time_comp import Timer
+
+try:
+    from .time_comp import Timer
+except ImportError:
+    from time_comp import Timer
 
 RAW_DATA_PATH = "data/raw/EventLog.csv"
 PROCESSED_DATA_PATH = "data/processed/patient_journey_log.csv"

@@ -3,11 +3,15 @@ from pathlib import Path
 import joblib
 import pandas as pd
 import xgboost as xgb
+import logging
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
 
 from .config import PipelineConfig, default_config
+
+logger = logging.getLogger(__name__)
 
 
 def _load_parquet_events(config: PipelineConfig) -> pd.DataFrame:
@@ -55,8 +59,20 @@ def train_next_activity(config: PipelineConfig | None = None):
         x, y, test_size=config.test_size, random_state=config.random_state, stratify=y
     )
 
-    model = xgb.XGBClassifier(n_estimators=100, max_depth=5, learning_rate=0.1)
-    model.fit(x_train, y_train)
+    model = xgb.XGBClassifier(
+        n_estimators=100,
+        max_depth=5,
+        learning_rate=0.1,
+        tree_method="hist",
+        device="cpu",
+        predictor="cpu_predictor",
+    )
+    try:
+        model.fit(x_train, y_train)
+    except Exception as exc:
+        logger.warning("XGBoost classifier failed (%s). Falling back to RandomForestClassifier.", exc)
+        model = RandomForestClassifier(n_estimators=200, random_state=config.random_state, n_jobs=-1)
+        model.fit(x_train, y_train)
 
     acc = accuracy_score(y_test, model.predict(x_test))
     print(f"Model Accuracy: {acc:.2%}")
@@ -66,7 +82,16 @@ def train_next_activity(config: PipelineConfig | None = None):
     input_encoder_path = config.model_dir / config.next_activity_input_encoder_filename
     output_encoder_path = config.model_dir / config.next_activity_output_encoder_filename
 
-    model.save_model(str(model_path))
+    if hasattr(model, "save_model"):
+        try:
+            model.save_model(str(model_path))
+        except TypeError:
+            # Some xgboost/sklearn combinations fail to persist model metadata via save_model.
+            model_path = model_path.with_suffix(".joblib")
+            joblib.dump(model, model_path)
+    else:
+        model_path = model_path.with_suffix(".joblib")
+        joblib.dump(model, model_path)
     joblib.dump(le_input, input_encoder_path)
     joblib.dump(le_output, output_encoder_path)
     print(f"Success! Model and encoders saved to {config.model_dir}")

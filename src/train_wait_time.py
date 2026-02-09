@@ -6,6 +6,7 @@ filling the logic to train and persist the XGBoost model.
 
 import pandas as pd
 import xgboost as xgb
+import joblib
 import os
 import logging
 import json
@@ -61,6 +62,8 @@ def train_baseline_model(X_train, y_train, config: PipelineConfig):
         n_estimators=100,
         learning_rate=0.1,
         max_depth=5,
+        tree_method="hist",
+        device="cpu",
         random_state=config.random_state,
         n_jobs=-1
     )
@@ -80,7 +83,12 @@ def save_artifacts(config: PipelineConfig, model, metrics):
     model_path = config.model_dir / config.model_filename
     metrics_path = config.model_dir / config.metrics_filename
 
-    model.save_model(str(model_path))
+    try:
+        model.save_model(str(model_path))
+    except TypeError:
+        # Some xgboost/sklearn version combos fail save_model due estimator-type metadata.
+        model_path = model_path.with_suffix(".joblib")
+        joblib.dump(model, model_path)
     with open(metrics_path, "w", encoding="utf-8") as metrics_file:
         json.dump(metrics, metrics_file, indent=2)
 
