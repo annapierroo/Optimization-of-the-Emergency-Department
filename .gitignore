@@ -212,3 +212,5 @@ reports/figures/*.
 model/uploads/Hospital+Patient+Records.xlsx
 
 data/raw/Hospital+Patient+Records.xlsx
+
+uploads/
