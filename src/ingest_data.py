@@ -8,17 +8,24 @@ try:
 except ImportError:
     from time_comp import Timer
 
-RAW_DATA_PATH = "data/raw/EventLog.csv"
-PROCESSED_DATA_PATH = "data/processed/patient_journey_log.csv"
+DATA_VERSION = "1.0"
+RAW_DATA_PATH = f"data/snapshots/v{DATA_VERSION}/EventLog.csv"
+PROCESSED_DATA_PATH = f"data/processed/v{DATA_VERSION}/patient_journey_log.csv"
 
-def ingest_and_clean():
+def ingest_and_clean(version):
+    raw_d = f"data/snapshots/v{version}"
+    raw_path = os.path.join(raw_d, "EventLog.csv")
+    processed_path = f"data/processed/v{version}/patient_journey_log.csv"
+    if not os.path.exists(raw_d):
+        os.makedirs(raw_d, exist_ok=True)
+
     timer = Timer()
     timer.start("Data Ingestion")
     try:
         cols_to_use = ['ENCOUNTER', 'START', 'STOP', 'DESCRIPTION']
-        df = pd.read_csv(RAW_DATA_PATH, sep=';', usecols=cols_to_use)
+        df = pd.read_csv(raw_path, sep=';', usecols=cols_to_use)
     except FileNotFoundError:
-        print(f"ERROR: File {RAW_DATA_PATH} not found.")
+        print(f"ERROR: File {raw_path} not found.")
         sys.exit(1)
     except ValueError as e:
         print(f"ERROR: One or more columns in the CSV file are missing or have incorrect data types: {e}")
@@ -85,9 +92,10 @@ def ingest_and_clean():
     timer.end("Data quality checks")
 
     timer.start("Saving processed dataset")
-    os.makedirs(os.path.dirname(PROCESSED_DATA_PATH), exist_ok=True)
-    df.to_csv(PROCESSED_DATA_PATH, index=False)
-    print(f"Ready dataset saved to: {PROCESSED_DATA_PATH}")
+    os.makedirs(os.path.dirname(processed_path), exist_ok=True)
+    df['data_version'] = version
+    df.to_csv(processed_path, index=False)
+    print(f"Ready dataset saved to: {processed_path}")
     timer.end("Saving processed dataset")
 
     total_time = timer.total()
@@ -99,4 +107,4 @@ def ingest_and_clean():
 
 
 if __name__ == "__main__":
-    ingest_and_clean()
+    ingest_and_clean(DATA_VERSION)
