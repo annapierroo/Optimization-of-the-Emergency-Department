@@ -2,20 +2,24 @@ import pandas as pd
 from pathlib import Path
 
 from src.config import PipelineConfig
-from src.features import (
-    FEATURES_FILENAME,
-    PROCESSED_FILENAME,
-    DefaultFeaturePipeline,
-)
+from src.features import DefaultFeaturePipeline
+from src.pipeline_architecture import EmergencyDepartmentPipeline
 
 
 def _make_config(tmp_path: Path) -> PipelineConfig:
     return PipelineConfig(
         project_root=tmp_path,
+        data_path=tmp_path / "data" / "raw" / "EventLog.csv",
         raw_data_dir=tmp_path / "data" / "raw",
         processed_data_dir=tmp_path / "data" / "processed",
+        processed_filename="patient_journey_log.csv",
         feature_store_dir=tmp_path / "data" / "features",
+        features_filename="encounter_features.parquet",
         model_dir=tmp_path / "artifacts" / "models",
+        model_filename="xgb_model.json",
+        metrics_filename="metrics.json",
+        test_size=0.2,
+        random_state=42,
         reports_dir=tmp_path / "reports",
     )
 
@@ -42,7 +46,7 @@ def test_default_pipeline_build_features_creates_output(tmp_path, monkeypatch):
             "end:timestamp": "2020-02-02T04:00:00Z",
         },
     ]
-    processed_path = config.processed_data_dir / PROCESSED_FILENAME
+    processed_path = config.processed_data_dir / config.processed_filename
     processed_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(processed_path, index=False)
 
@@ -57,8 +61,54 @@ def test_default_pipeline_build_features_creates_output(tmp_path, monkeypatch):
     pipeline = DefaultFeaturePipeline(config)
     pipeline.build_features()
 
-    output_path = config.feature_store_dir / FEATURES_FILENAME
+    output_path = config.feature_store_dir / config.features_filename
     assert output_path.exists()
     df = pd.read_csv(output_path)
-    assert {"encounter_duration_minutes", "total_hours", "event_count"}.issubset(df.columns)
-    assert any(col.startswith("proc_count__") for col in df.columns)
+    assert {"Waiting_Time_Mins", "Day_Index", "Arrival_Hour"}.issubset(df.columns)
+    assert {"duration_hours", "duration_hours_capped", "DESCRIPTION", "REASONDESCRIPTION"}.issubset(df.columns)
+
+
+def test_emergency_department_pipeline_runs_multiple_trainers_in_order(tmp_path):
+    config = _make_config(tmp_path)
+    calls = []
+
+    class FakeIngestion:
+        def load_raw_data(self):
+            calls.append("load")
+
+        def clean_data(self):
+            calls.append("clean")
+
+    class FakeFeaturePipeline:
+        def build_features(self):
+            calls.append("features")
+
+    class FakeTrainer:
+        def __init__(self, name):
+            self.name = name
+
+        def train_model(self):
+            calls.append(f"train:{self.name}")
+
+    class FakeEvaluator:
+        def run_evaluation(self):
+            calls.append("evaluate")
+
+    pipeline = EmergencyDepartmentPipeline(
+        config=config,
+        ingestion=FakeIngestion(),
+        feature_pipeline=FakeFeaturePipeline(),
+        trainers=[FakeTrainer("wait_time"), FakeTrainer("los"), FakeTrainer("next_activity")],
+        evaluator=FakeEvaluator(),
+    )
+
+    pipeline.run()
+    assert calls == [
+        "load",
+        "clean",
+        "features",
+        "train:wait_time",
+        "train:los",
+        "train:next_activity",
+        "evaluate",
+    ]
