@@ -7,7 +7,7 @@ import pm4py
 import holidays
 from graphviz import Source
 from pm4py.visualization.dfg import visualizer as dfg_visualizer
-from timer import Timer
+from time_comp import Timer
 
 PROCESSED_DATA_PATH = "data/processed/patient_journey_log.csv"
 OUTPUT_DIR = "reports/figures"
