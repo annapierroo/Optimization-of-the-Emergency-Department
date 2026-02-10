@@ -45,8 +45,6 @@ def load_data():
         df['START'] = pd.to_datetime(df['START'], utc=True, errors='coerce')
         df['STOP'] = pd.to_datetime(df['STOP'], utc=True, errors='coerce')
         df = df.dropna(subset=['START', 'STOP'])
-        df['Date'] = df['START'].dt.date
-
         
         df['Waiting_Time_Mins'] = (df['STOP'] - df['START']).dt.total_seconds() / 60
         df['Waiting_Time_Mins'] = df['Waiting_Time_Mins'].clip(lower=0)
@@ -67,11 +65,8 @@ def load_data():
         df['Year_Week'] = df['START'].dt.strftime('%Y - Week %U')
 
     def holiday_day(dt):
-        d= dt.date()
-        if d in holiday:
-            return "Holiday"
-        elif d.weekday() >= 5: 
-            return "Weekend"
+        if dt in holiday: return "Holiday"
+        elif dt.weekday() >= 5: return "Weekend"
         else: return "Weekday"
     df['Day_Type'] = df['START'].apply(holiday_day)
     return df, is_real_data
@@ -110,47 +105,6 @@ df, is_real_data = load_data()
 model_wait, model_wait_status = load_waiting_time_model()
 model_next, enc_in, enc_out = load_next_activity_model()
 
-st.header("Process Discovery & Analysis of Historical Data")
-DATA_VERSION = "1.0"
-FIG_PATH = f"reports/figures/v{DATA_VERSION}"
-tab_dfg, tab_stats = st.tabs(["Process Flow (DFG)", "Statistical Analysis"])
-with tab_dfg:    
-        st.subheader("Frequancy of Activities")
-        path_freq = f"{FIG_PATH}/patient_journey_dfg.png"
-        if os.path.exists(path_freq):
-            st.image(path_freq, use_container_width=True)
-        else:
-            st.warning(f"File not found: {path_freq}")
-
-        st.subheader("Average Transition Times")
-        path_time = f"{FIG_PATH}/patient_journey_dfg_time.png"
-        if os.path.exists(path_time):
-            st.image(path_time, use_container_width=True)
-        else:
-            st.warning(f"File not found: {path_time}")
-with tab_stats:
-    st.subheader("Weekend vs Holiday vs Weekday")
-    
-    path_box = f"{FIG_PATH}/waiting_holiday_weekend_weekday_boxplot.png"
-    if os.path.exists(path_box):
-        st.image(path_box,use_container_width=True)
-    
-    path_ecdf = f"{FIG_PATH}/waiting_holiday_weekend_weekday_ecdf.png"
-    if os.path.exists(path_ecdf):
-       st.image(path_ecdf, use_container_width=True)
-
-    
-    st.subheader("Day vs Night")
-    col5, col6 = st.columns(2)
-    with col5:
-        path_dn_box = f"{FIG_PATH}/waiting_day_vs_night_boxplot.png"
-        if os.path.exists(path_dn_box):
-            st.image(path_dn_box, use_container_width=True)
-    with col6:
-        path_dn_ecdf = f"{FIG_PATH}/waiting_day_vs_night_ecdf.png"
-        if os.path.exists(path_dn_ecdf):
-            st.image(path_dn_ecdf, use_container_width=True)
-            
 # --- SIDEBAR: CONTROL PANEL ---
 st.sidebar.header("Control Panel")
 
@@ -173,7 +127,7 @@ st.sidebar.markdown("---")
 
 # B. AI Simulator: Waiting Time
 st.sidebar.subheader("2. Prediction: Waiting Time")
-st.sidebar.info("Predict waiting time for a new patient on a specific date.")
+st.sidebar.info("Predict waiting time for a new patient.")
 input_day = st.sidebar.selectbox("Arrival Day", ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
 input_hour = st.sidebar.slider("Arrival Hour", 0, 23, 10)
 
