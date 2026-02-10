@@ -1,101 +1,99 @@
-from pathlib import Path
-
-import joblib
 import pandas as pd
 import xgboost as xgb
-import logging
-from sklearn.metrics import accuracy_score
+import joblib
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
 
-from .config import PipelineConfig, default_config
+# Configuration
+RAW_DATA_PATH = "data/raw/EventLog.csv"
+MODEL_DIR = "models"
+MODEL_PATH = os.path.join(MODEL_DIR, "next_activity_xgb.json")
+INPUT_ENCODER_PATH = os.path.join(MODEL_DIR, "input_encoder.pkl")
+OUTPUT_ENCODER_PATH = os.path.join(MODEL_DIR, "output_encoder.pkl")
 
-logger = logging.getLogger(__name__)
+def train_next_activity():
+    """
+    Trains an XGBoost Classifier.
+    FIX 2.0: Removes rare classes (< 5 occurrences) to prevent gaps in target labels
+    and uses stratified splitting.
+    """
+    print("--- Starting Next Activity Prediction Pipeline ---")
 
+    # 1. Load Data
+    if not os.path.exists(RAW_DATA_PATH):
+        print(f"Error: {RAW_DATA_PATH} not found.")
+        return
 
-def _load_parquet_events(config: PipelineConfig) -> pd.DataFrame:
-    feature_path = config.feature_store_dir / config.features_filename
-    if not feature_path.exists():
-        raise FileNotFoundError(f"Feature file not found at {feature_path}")
+    df = pd.read_csv(RAW_DATA_PATH, sep=";")
+    
+    # 2. Data Cleaning
+    df.columns = df.columns.str.strip()
+    df['START'] = pd.to_datetime(df['START'], utc=True, errors='coerce')
+    df = df.dropna(subset=['START', 'DESCRIPTION', 'ENCOUNTER'])
+    df = df.sort_values(by=['ENCOUNTER', 'START'])
 
-    df = pd.read_parquet(feature_path)
-    required = {"case:concept:name", "concept:name", "start:timestamp"}
-    missing = required.difference(df.columns)
-    if missing:
-        raise ValueError(f"Missing required columns in parquet: {sorted(missing)}")
+    # 3. Feature Engineering
+    # Target: Shift 'DESCRIPTION' up by 1
+    df['Next_Activity'] = df.groupby('ENCOUNTER')['DESCRIPTION'].shift(-1)
+    df = df.dropna(subset=['Next_Activity'])
 
-    df["start:timestamp"] = pd.to_datetime(df["start:timestamp"], utc=True, errors="coerce")
-    df = df.dropna(subset=["case:concept:name", "concept:name", "start:timestamp"])
-    return df
-
-
-def train_next_activity(config: PipelineConfig | None = None):
-    """Train an XGBoost classifier to predict the next activity from parquet features."""
-    if config is None:
-        config = default_config(Path("."))
-
-    df = _load_parquet_events(config)
-    df = df.sort_values(by=["case:concept:name", "start:timestamp"]).copy()
-    df["Next_Activity"] = df.groupby("case:concept:name")["concept:name"].shift(-1)
-    df = df.dropna(subset=["Next_Activity"])
-
-    activity_counts = df["Next_Activity"].value_counts()
+    # --- FIX START: Remove Rare Classes ---
+    # XGBoost crashes if a class is in the Test set but missing in Train set (creating a gap).
+    # We remove activities that appear fewer than 5 times to ensure stability.
+    print("Filtering rare activities...")
+    activity_counts = df['Next_Activity'].value_counts()
     common_activities = activity_counts[activity_counts >= 5].index
-    df = df[df["Next_Activity"].isin(common_activities)]
+    df = df[df['Next_Activity'].isin(common_activities)]
+    print(f"   -> Retained {len(common_activities)} unique activities types.")
+    # --- FIX END ---
 
-    df["Hour"] = df["start:timestamp"].dt.hour
-    df["Day_of_Week"] = df["start:timestamp"].dt.dayofweek
-
+    # Temporal Features
+    df['Hour'] = df['START'].dt.hour
+    df['Day_of_Week'] = df['START'].dt.dayofweek 
+    
+    # 4. Encoding
+    print("Encoding features and targets...")
+    
     le_input = LabelEncoder()
-    df["Current_Activity_Encoded"] = le_input.fit_transform(df["concept:name"])
-
+    le_input.fit(df['DESCRIPTION'])
+    df['Current_Activity_Encoded'] = le_input.transform(df['DESCRIPTION'])
+    
     le_output = LabelEncoder()
-    df["Next_Activity_Encoded"] = le_output.fit_transform(df["Next_Activity"])
+    le_output.fit(df['Next_Activity'])
+    df['Next_Activity_Encoded'] = le_output.transform(df['Next_Activity'])
 
-    x = df[["Current_Activity_Encoded", "Hour", "Day_of_Week"]]
-    y = df["Next_Activity_Encoded"]
-    x_train, x_test, y_train, y_test = train_test_split(
-        x, y, test_size=config.test_size, random_state=config.random_state, stratify=y
-    )
+    # Split Data
+    features = ['Current_Activity_Encoded', 'Hour', 'Day_of_Week']
+    X = df[features]
+    y = df['Next_Activity_Encoded']
 
+    # Stratify=y ensures that every class in Train is also in Test (no holes)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+    # 5. Model Training
+    print(f"Training XGBoost on {len(df)} samples...")
+    
     model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=5,
-        learning_rate=0.1,
-        tree_method="hist",
-        device="cpu",
-        predictor="cpu_predictor",
+        learning_rate=0.1
     )
-    try:
-        model.fit(x_train, y_train)
-    except Exception as exc:
-        logger.warning("XGBoost classifier failed (%s). Falling back to RandomForestClassifier.", exc)
-        model = RandomForestClassifier(n_estimators=200, random_state=config.random_state, n_jobs=-1)
-        model.fit(x_train, y_train)
+    
+    model.fit(X_train, y_train)
 
-    acc = accuracy_score(y_test, model.predict(x_test))
+    # 6. Evaluation
+    acc = accuracy_score(y_test, model.predict(X_test))
     print(f"Model Accuracy: {acc:.2%}")
 
-    config.model_dir.mkdir(parents=True, exist_ok=True)
-    model_path = config.model_dir / config.next_activity_model_filename
-    input_encoder_path = config.model_dir / config.next_activity_input_encoder_filename
-    output_encoder_path = config.model_dir / config.next_activity_output_encoder_filename
-
-    if hasattr(model, "save_model"):
-        try:
-            model.save_model(str(model_path))
-        except TypeError:
-            # Some xgboost/sklearn combinations fail to persist model metadata via save_model.
-            model_path = model_path.with_suffix(".joblib")
-            joblib.dump(model, model_path)
-    else:
-        model_path = model_path.with_suffix(".joblib")
-        joblib.dump(model, model_path)
-    joblib.dump(le_input, input_encoder_path)
-    joblib.dump(le_output, output_encoder_path)
-    print(f"Success! Model and encoders saved to {config.model_dir}")
-
+    # 7. Save Artifacts
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    model.save_model(MODEL_PATH)
+    joblib.dump(le_input, INPUT_ENCODER_PATH)
+    joblib.dump(le_output, OUTPUT_ENCODER_PATH)
+    
+    print(f"Success! Model and encoders saved to {MODEL_DIR}")
 
 if __name__ == "__main__":
     train_next_activity()
