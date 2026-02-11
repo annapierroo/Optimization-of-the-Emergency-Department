@@ -1,155 +1,130 @@
-# Optimization of the Emergency Department
+Optimization of the Emergency Department
 
-## Project Overview
-This repository implements an end-to-end **MLOps framework** designed to analyze, visualize, and predict patient flows within an Emergency Department (ED). By integrating **Process Mining** (PM4Py) with **Predictive Analytics** (XGBoost), the system identifies operational bottlenecks and predicts future patient states to support resource allocation decisions.
+End-to-end MLOps project to analyze, visualize, and predict patient flows in an Emergency Department (ED) by combining Process Mining (PM4Py) and Predictive Modeling (XGBoost). The pipeline shows graphs of the patient journey, waiting times, and identifies bottlenecks; it also trains a model to predict the next activity in a patient pathway and the estimated waiting time.  ￼
 
-Unlike standard data analysis scripts, this project is engineered with a **modular architecture**, ensuring reproducibility via **Docker** and data versioning via **DVC**.
 
-## Core Capabilities
+Repository structure (high level)
 
-### 1. Process Discovery & Mining
-* **Graph Reconstruction:** Utilizes the *Directly-Follows Graph (DFG)* algorithm to map patient journeys from Triage to Discharge.
-* **Bottleneck Analysis:** Quantifies transition times between hospital activities to pinpoint structural inefficiencies.
+app/        # Streamlit dashboard + inference
+data/       # data storage (DVC-managed)
+models/     # trained models and encoders
+reports/    # figures and CSV outputs
+src/        # ingestion, process mining, training pipeline code
+tests/      # unit tests
+dvc.yaml    # DVC pipeline stages
+Dockerfile  # reproducible runtime environment
 
-### 2. Predictive Modeling (Next Activity Prediction)
-* **Algorithm:** Implements a Gradient Boosting classifier (**XGBoost**) to predict the next clinical step for a patient based on their current trajectory.
-* **Feature Engineering:** Extracts temporal patterns (hour, day of week) and sequential lag features.
-* **Robust Training:** Includes stratified sampling and rare-class filtering to handle the inherent class imbalance of hospital event logs.
+⸻
 
-### 3. Software Engineering
-* **Hexagonal/Modular Architecture:** The codebase uses a Protocol-based design (Ports & Adapters pattern) seen in `src/pipeline_architecture.py`, decoupling the core logic (Ingestion, Training, Evaluation) from specific implementations.
-* **Reproducibility:** Fully containerized environment using Docker.
+Quick start (recommended): Docker + DVC pipeline
 
-## Tech Stack
+Prerequisites
 
-* **Language:** Python 3.9+
-* **Process Mining:** PM4Py
-* **Machine Learning:** XGBoost, Scikit-Learn
-* **Orchestration & MLOps:** DVC (Data Version Control), Docker
-* **Visualization:** Streamlit (Interactive Dashboard)
+Install:
+	•	Git
+	•	Docker Desktop (must be running)
 
-## Project Structure
+1) Clone the repository
 
-```text
-├── app/                 # Streamlit Dashboard and Inference Backend
-├── data/                # Data storage (managed by DVC)
-├── models/              # Serialized XGBoost models and Encoders
-├── notebooks/           # Jupyter notebooks for EDA and prototyping
-├── src/                 # Core Source Code
-│   ├── pipeline_architecture.py  # Protocol definitions (Ports)
-│   ├── train_next_activity.py    # Training logic
-│   ├── ingest_data.py            # ETL pipelines
-│   └── process_discovery.py      # PM4Py logic
-├── tests/               # Unit tests
-├── Dockerfile           # Environment definition
-└── dvc.yaml             # Pipeline stage definitions
-```
-## Quick Start
+git clone https://github.com/annapierroo/Optimization-of-the-Emergency-Department.git
+cd Optimization-of-the-Emergency-Department
 
-### Prerequisites
-Before running the pipeline, ensure your environment meets the following requirements:
-* **Docker Desktop**: Must be installed and running (the project runs entirely in containers to avoid dependency hell).
-* **Git**: For version control.
-* **Make** (Optional): If you prefer using a Makefile for commands.
+2) Build the Docker image
 
-### 1. Setup & Installation
-Build the Docker image containing the full runtime environment (Python 3.9, PM4Py, XGBoost).
-
-```bash
-# Build the image with the tag 'ed-optimizer'
-docker build -t ed-optimizer .
-```
-
-## Quick Start
-
-### Prerequisites
-
-Before running the pipeline, ensure your environment meets the following requirements:
-
-* **Docker Desktop**: Must be installed and running (the project runs entirely in containers to avoid dependency hell).
-* **Git**: For version control.
-
-### 1. Setup & Installation
-
-Build the Docker image containing the full runtime environment (Python 3.9, PM4Py, XGBoost).
-
-```bash
-# Build the image with the tag 'ed-optimizer'
 docker build -t ed-optimizer .
 
-```
 
-### 2. Running the Pipeline
 
-You can execute the full MLOps workflow (Ingestion → Processing → Training) using a single Docker command. We use **DVC** (Data Version Control) to manage the pipeline stages.
+3) Run the full pipeline (one command)
 
-**Option A: Automated Pipeline (Recommended)**
-This command mounts your current directory (`$(pwd)`) to the container, runs the DVC reproduction, and ensures the output files are accessible.
+This mounts your project into the container, runs the DVC pipeline, and ensures outputs are writable on the host.
 
-```bash
-docker run -v $(pwd):/app ed-optimizer /bin/bash -c "dvc repro && chmod -R 777 reports"
+docker run -v "$(pwd)":/app ed-optimizer /bin/bash -c "dvc repro && chmod -R 777 reports"
 
-```
+If you are on Windows PowerShell, use:
 
-**Option B: Manual Execution**
-If you need to debug specific steps:
+docker run -v ${PWD}:/app ed-optimizer /bin/bash -c "dvc repro && chmod -R 777 reports"
 
-```bash
-docker run -it -v $(pwd):/app ed-optimizer /bin/bash
-# Inside the container:
-python src/ingest_data.py    # Step 1: Ingest & Clean
-python src/train_next_activity.py # Step 2: Train XGBoost
+￼
 
-```
+4) Launch the Streamlit dashboard
 
-### 3. Launching the Dashboard
+Option A (run locally, if your local env has dependencies installed):
 
-To visualize the Process Map (DFG) and interact with the Prediction Model:
-
-```bash
-# Run Streamlit on localhost:8501
 streamlit run app/streamlit_app.py
 
-```
+Option B (run via Docker; exposes Streamlit on localhost:8501):
 
----
+docker run -it -p 8501:8501 -v "$(pwd)":/app ed-optimizer \
+  /bin/bash -c "streamlit run app/streamlit_app.py --server.address=0.0.0.0 --server.port=8501"
 
-## Configuration & Customization
+￼
 
-### Changing the Cohort Size
+Open in browser:
+	•	http://localhost:8501
 
-By default, the pipeline processes a subset of patients for speed. To analyze the full dataset or a different sample size:
+⸻
 
-1. Open `src/ingest_data.py`.
-2. Locate the `n_cases` variable configuration:
-```python
-# src/ingest_data.py
-n_cases = 1000  # <--- Update this value (e.g., set to None for all data)
+Alternative: run step-by-step (inside Docker)
 
-```
+If you want to debug individual steps:
 
+docker run -it -v "$(pwd)":/app ed-optimizer /bin/bash
 
-3. Re-run the pipeline: `dvc repro`.
+Then inside the container:
 
-### Model Hyperparameters
+python src/ingest_data.py
+python src/train_next_activity.py
 
-The XGBoost configuration is decoupled from the training logic. You can adjust hyperparameters (learning rate, max depth) directly in `src/train_next_activity.py` or move them to a `params.yaml` file for better MLOps practice.
+￼
 
----
+⸻
 
-## Outputs & Artifacts
+Alternative: run locally (without Docker)
 
-After a successful run, the system generates the following artifacts in the `reports/` and `models/` directories:
+Use this if you prefer a native setup. Docker is still recommended for reproducibility.
 
-| Artifact | Path | Description |
-| --- | --- | --- |
-| **Process Map** | `reports/figures/patient_journey_dfg.png` | Visual representation of the Directly-Follows Graph showing patient flow. |
-| **Transition Stats** | `reports/waiting_transitions.csv` | Statistical breakdown of waiting times between activities. |
-| **XGBoost Model** | `models/next_activity_xgb.json` | The trained predictive model for next-activity classification. |
-| **Encoders** | `models/*.pkl` | Serialized LabelEncoders for categorical features. |
+1) Create and activate a virtual environment
 
----
+macOS/Linux
 
-```
+python -m venv .venv
+source .venv/bin/activate
 
-```
+Windows (PowerShell)
+
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+2) Install dependencies
+
+pip install --upgrade pip
+pip install -r requirements.txt
+
+3) Run the pipeline
+
+If you have DVC installed:
+
+dvc repro
+
+Or run scripts directly:
+
+python src/ingest_data.py
+python src/train_next_activity.py
+
+4) Run the dashboard
+
+streamlit run app/streamlit_app.py
+
+----
+
+Configuration
+
+Change cohort size / number of cases
+
+In src/ingest_data.py, edit:
+
+n_cases = 1000  # set to None for all data
+
+Then re-run.
+
