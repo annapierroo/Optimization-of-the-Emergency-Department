@@ -45,7 +45,7 @@ If you are on Windows PowerShell, use:
 
 docker run -v ${PWD}:/app ed-optimizer /bin/bash -c "dvc repro && chmod -R 777 reports"
 
-￼
+
 
 4) Launch the Streamlit dashboard
 
@@ -58,7 +58,6 @@ Option B (run via Docker; exposes Streamlit on localhost:8501):
 docker run -it -p 8501:8501 -v "$(pwd)":/app ed-optimizer \
   /bin/bash -c "streamlit run app/streamlit_app.py --server.address=0.0.0.0 --server.port=8501"
 
-￼
 
 Open in browser:
 	•	http://localhost:8501
@@ -75,8 +74,6 @@ Then inside the container:
 
 python src/ingest_data.py
 python src/train_next_activity.py
-
-￼
 
 ⸻
 
